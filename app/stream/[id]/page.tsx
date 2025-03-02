@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import ReactPlayer from 'react-player';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +31,7 @@ interface Reaction {
 
 export default function StreamPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { id = '' } = useParams();
   const { toast } = useToast();
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -348,7 +349,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
       <ShareModal 
         isOpen={showShareModal} 
         onClose={() => setShowShareModal(false)} 
-        streamId={params.id}
+        streamId={Array.isArray(id) ? id[0] : id}
       />
     </div>
   );
