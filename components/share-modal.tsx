@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { toast } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import QRCode from 'react-qr-code';
 import { Copy, Facebook, Link, Mail, Twitter } from 'lucide-react';
@@ -17,7 +17,7 @@ interface ShareModalProps {
 
 export function ShareModal({ isOpen, onClose, streamId }: ShareModalProps) {
   const [copied, setCopied] = useState(false);
-  
+  const { toast } = useToast();
   const streamUrl = `https://streamhive.app/stream/${streamId}`;
   
   const handleCopyLink = () => {
