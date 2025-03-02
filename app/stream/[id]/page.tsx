@@ -10,9 +10,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { toast } from '@/components/ui/use-toast';
+import { useToast } from '@/components/ui/use-toast';
 import { ShareModal } from '@/components/share-modal';
 import { ArrowLeft, Beef as Bee, Heart, MessageSquare, Share2, ThumbsUp, Users, Volume2, VolumeX, Smile, Send } from 'lucide-react';
+import Link from 'next/link';
 
 interface Message {
   id: string;
@@ -30,6 +31,7 @@ interface Reaction {
 
 export default function StreamPage({ params }: { params: { id: string } }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
@@ -324,7 +326,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
                       className="w-full justify-start"
                       onClick={handleCopyLink}
                     >
-                      <Link className="mr-2 h-4 w-4" />
+                      <Link href="#" className="mr-2 h-4 w-4" />
                       Copiar link
                     </Button>
                     <Button 
