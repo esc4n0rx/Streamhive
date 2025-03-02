@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/components/ui/use-toast';
 import { ShareModal } from '@/components/share-modal';
-import { ArrowLeft, Beef as Bee, Heart, MessageSquare, Share2, ThumbsUp, Users, Volume2, VolumeX, Smile, Send } from 'lucide-react';
+import { ArrowLeft, Beef as Bee, Heart, Share2, ThumbsUp, Users, Smile, Send } from 'lucide-react';
 import Link from 'next/link';
 
 interface Message {
@@ -29,9 +29,11 @@ interface Reaction {
   y: number;
 }
 
-export default function StreamPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
+export default function StreamPage() {
+  // Obtém o id da rota usando useParams
   const { id = '' } = useParams();
+  const streamId = Array.isArray(id) ? id[0] : id;
+  const router = useRouter();
   const { toast } = useToast();
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -43,14 +45,14 @@ export default function StreamPage({ params }: { params: { id: string } }) {
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const playerContainerRef = useRef<HTMLDivElement>(null);
 
-  // Simulate loading stream data
+  // Simulação dos dados da transmissão e reações...
   useEffect(() => {
-    // Simulate viewers joining
+    // Simula a entrada de espectadores
     const viewerInterval = setInterval(() => {
       setViewers(prev => Math.min(prev + Math.floor(Math.random() * 2), 15));
     }, 10000);
     
-    // Simulate initial messages
+    // Simula mensagens iniciais
     const initialMessages: Message[] = [
       { id: '1', user: 'Ana', text: 'Oi pessoal! Cheguei!', timestamp: new Date(Date.now() - 300000) },
       { id: '2', user: 'Carlos', text: 'Esse filme é incrível!', timestamp: new Date(Date.now() - 180000) },
@@ -58,7 +60,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
     ];
     setMessages(initialMessages);
     
-    // Simulate new messages
+    // Simula novas mensagens
     const messageInterval = setInterval(() => {
       const users = ['Ana', 'Carlos', 'Mariana', 'João', 'Luiza'];
       const texts = [
@@ -87,7 +89,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
     };
   }, []);
   
-  // Clean up old reactions
+  // Limpeza de reações antigas
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
       setReactions(prev => prev.filter(r => Date.now() - parseInt(r.id) < 2000));
@@ -133,7 +135,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
   };
   
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(`https://streamhive.app/stream/${params.id}`);
+    navigator.clipboard.writeText(`https://streamhive.app/stream/${id}`);
     toast({
       title: "Link copiado!",
       description: "O link da transmissão foi copiado para a área de transferência.",
@@ -181,7 +183,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
             }}
           />
           
-          {/* Floating reactions */}
+          {/* Reações flutuantes */}
           <AnimatePresence>
             {reactions.map(reaction => (
               <motion.div
@@ -197,7 +199,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
             ))}
           </AnimatePresence>
           
-          {/* Reaction buttons */}
+          {/* Botões de reação */}
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 flex space-x-2 bg-black/50 backdrop-blur-sm rounded-full p-2">
             <TooltipProvider>
               {[
@@ -349,7 +351,7 @@ export default function StreamPage({ params }: { params: { id: string } }) {
       <ShareModal 
         isOpen={showShareModal} 
         onClose={() => setShowShareModal(false)} 
-        streamId={Array.isArray(id) ? id[0] : id}
+        streamId={streamId}
       />
     </div>
   );
