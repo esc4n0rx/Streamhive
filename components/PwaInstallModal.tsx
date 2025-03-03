@@ -9,47 +9,64 @@ interface PwaInstallModalProps {
 }
 
 export function PwaInstallModal({ onClose }: PwaInstallModalProps) {
-  const [installable, setInstallable] = useState(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const router = useRouter();
+  const [platform, setPlatform] = useState<"ios" | "android" | "desktop" | "unknown">("unknown");
 
   useEffect(() => {
-    const beforeInstallHandler = (e: any) => {
-      // Previne o mini-infobar padrão
-      e.preventDefault();
-      console.log("[PWAInstall] Evento beforeinstallprompt capturado.");
-      setDeferredPrompt(e);
-      setInstallable(true);
-    };
-
-    const appInstalledHandler = () => {
-      console.log("[PWAInstall] PWA instalado com sucesso.");
-    };
-
-    window.addEventListener("beforeinstallprompt", beforeInstallHandler);
-    window.addEventListener("appinstalled", appInstalledHandler);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", beforeInstallHandler);
-      window.removeEventListener("appinstalled", appInstalledHandler);
-    };
+    if (typeof window !== "undefined") {
+      const ua = window.navigator.userAgent.toLowerCase();
+      if (/iphone|ipad|ipod/.test(ua)) {
+        setPlatform("ios");
+      } else if (/android/.test(ua)) {
+        setPlatform("android");
+      } else if (/win|mac|linux/.test(ua)) {
+        setPlatform("desktop");
+      } else {
+        setPlatform("unknown");
+      }
+    }
   }, []);
 
-  const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      console.log("[PWAInstall] Abrindo prompt de instalação.");
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`[PWAInstall] Resposta do usuário: ${outcome}`);
-      setDeferredPrompt(null);
-      setInstallable(false);
-      // Após instalar, podemos redirecionar para o dashboard, por exemplo:
-      router.push("/dashboard");
+  const getInstructions = () => {
+    if (platform === "ios") {
+      return (
+        <>
+          <p className="text-center mb-2">
+            No iPhone/iPad, abra o menu de compartilhamento no Safari (ícone de compartilhamento) e toque em "Adicionar à Tela de Início".
+          </p>
+          <p className="text-center text-sm text-muted-foreground">
+            Essa ação permitirá instalar o StreamHive como um app.
+          </p>
+        </>
+      );
+    } else if (platform === "android") {
+      return (
+        <>
+          <p className="text-center mb-2">
+            No Android, abra o menu do Chrome (três pontos no canto superior direito) e toque em "Adicionar a Tela Inicial".
+          </p>
+          <p className="text-center text-sm text-muted-foreground">
+            Essa ação permitirá instalar o StreamHive no seu dispositivo.
+          </p>
+        </>
+      );
+    } else if (platform === "desktop") {
+      return (
+        <p className="text-center text-sm text-muted-foreground">
+          Para instalar, utilize o menu do seu navegador e escolha "Adicionar à tela inicial".
+        </p>
+      );
     } else {
-      alert(
-        'Para instalar, clique no menu do seu navegador e escolha "Adicionar à tela inicial".'
+      return (
+        <p className="text-center text-sm text-muted-foreground">
+          Para instalar, utilize o menu do seu navegador e escolha "Adicionar à tela inicial".
+        </p>
       );
     }
+  };
+
+  const handleOk = () => {
+    router.push("/dashboard");
   };
 
   return (
@@ -70,21 +87,12 @@ export function PwaInstallModal({ onClose }: PwaInstallModalProps) {
           Instale o StreamHive
         </h2>
         <p className="text-center mb-4">
-          Adicione nosso aplicativo à sua tela inicial para uma experiência completa.
+          Para uma experiência completa, adicione nosso aplicativo à sua tela inicial.
         </p>
-        {installable ? (
-          <Button onClick={handleInstallClick} className="w-full">
-            Instalar App
-          </Button>
-        ) : (
-          <p className="text-center text-sm text-muted-foreground">
-            Não há prompt de instalação disponível.
-          </p>
-        )}
-        <div className="mt-4 flex justify-center">
-          <Button variant="outline" onClick={onClose}>
-            Pular
-          </Button>
+        {getInstructions()}
+        <div className="mt-6 flex justify-center gap-4">
+          <Button onClick={handleOk}>OK</Button>
+          <Button variant="outline" onClick={onClose}>Cancelar</Button>
         </div>
       </motion.div>
     </motion.div>
