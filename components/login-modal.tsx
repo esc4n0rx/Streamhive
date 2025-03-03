@@ -8,22 +8,12 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Github, Mail } from 'lucide-react';
-
+import { PwaInstallModal } from '@/components/PwaInstallModal'; // Importa o novo componente
 
 interface LoginModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
-
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      'pwa-install': any;
-    }
-  }
-}
-export {};
-
 
 export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const router = useRouter();
@@ -36,32 +26,8 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [registerEmail, setRegisterEmail] = useState<string>('');
   const [registerPassword, setRegisterPassword] = useState<string>('');
 
+  // Controla a exibição do modal de instalação via PwaInstallModal
   const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && !document.getElementById('pwa-install-script')) {
-      const script = document.createElement('script');
-      script.id = 'pwa-install-script';
-      script.type = 'module';
-      script.src = 'https://cdn.jsdelivr.net/npm/@pwabuilder/pwainstall';
-      document.head.appendChild(script);
-      console.log("[PWAInstall] Script carregado.");
-    }
-  }, []);
-
-  useEffect(() => {
-    const handler = (e: any) => {
-      e.preventDefault();
-      console.log("[PWAInstall] beforeinstallprompt capturado.");
-      setDeferredPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handler);
-    };
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,26 +92,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
       console.error(error);
       setIsLoading(false);
     }
-  };
-
-  // Chama o instalador PWA
-  const handleInstallApp = async () => {
-    console.log("[PWAInstall] Tentando abrir prompt de instalação.");
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      console.log(`[PWAInstall] Resposta do usuário: ${outcome}`);
-      setDeferredPrompt(null);
-    } else {
-      alert('Para instalar, clique no menu do seu navegador e escolha "Adicionar à tela inicial".');
-    }
-    setShowInstallModal(false);
-    router.push('/dashboard');
-  };
-
-  const handleSkipInstall = () => {
-    setShowInstallModal(false);
-    router.push('/dashboard');
   };
 
   if (!isOpen) return null;
@@ -270,44 +216,8 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
         </motion.div>
       </motion.div>
 
-      {/* Modal de Instalação do PWA */}
       {showInstallModal && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-        >
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            transition={{ type: "spring", damping: 20, stiffness: 300 }}
-            className="bg-card border border-border rounded-lg shadow-xl w-full max-w-md neon-border p-6"
-          >
-            <h2 className="text-2xl font-bold text-center mb-4 neon-text">
-              Instale o StreamHive
-            </h2>
-            <p className="text-center mb-4">
-              Adicione nosso aplicativo à sua tela inicial para uma experiência completa.
-            </p>
-            <pwa-install
-              id="pwaInstall"
-              manifestpath="manifest.json"
-              explainer="Este app pode ser instalado no seu dispositivo."
-              installbuttontext="Instalar"
-              cancelbuttontext="Pular"
-            ></pwa-install>
-            <div className="flex justify-center gap-4 mt-4">
-              <Button onClick={handleInstallApp}>
-                Instalar App
-              </Button>
-              <Button variant="outline" onClick={handleSkipInstall}>
-                Pular
-              </Button>
-            </div>
-          </motion.div>
-        </motion.div>
+        <PwaInstallModal onClose={() => setShowInstallModal(false)} />
       )}
     </>
   );
