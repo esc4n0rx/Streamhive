@@ -26,7 +26,7 @@ export default function Home() {
         playsInline
         className="video-background"
       >
-        <source src="https://assets.mixkit.co/videos/preview/mixkit-yellow-and-black-abstract-background-with-hexagons-42521-large.mp4" type="video/mp4" />
+        <source src="https://cdn.pixabay.com/video/2021/04/01/69645-531604963.mp4" type="video/mp4" />
       </video>
       
       {/* Honeycomb Pattern Overlay */}
