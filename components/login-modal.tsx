@@ -1,6 +1,19 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useRouter } from 'next/navigation';
+import { Github, Mail } from 'lucide-react';
+
+
+interface LoginModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
 declare global {
   namespace JSX {
@@ -9,19 +22,8 @@ declare global {
     }
   }
 }
-import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useRouter } from 'next/navigation';
-import { Github, Mail } from 'lucide-react';
-import '@pwabuilder/pwainstall';
+export {};
 
-interface LoginModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-}
 
 export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const router = useRouter();
@@ -36,6 +38,18 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !document.getElementById('pwa-install-script')) {
+      const script = document.createElement('script');
+      script.id = 'pwa-install-script';
+      script.type = 'module';
+      script.src = 'https://cdn.jsdelivr.net/npm/@pwabuilder/pwainstall';
+      document.head.appendChild(script);
+      console.log("[PWAInstall] Script carregado.");
+    }
+  }, []);
 
   useEffect(() => {
     const handler = (e: any) => {
@@ -102,7 +116,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const handleSocialLogin = async (provider: string) => {
     setIsLoading(true);
     try {
-      // Exemplo de social login
+      // Exemplo de social login (simulação)
       setTimeout(() => {
         localStorage.setItem('token', 'social-login-token');
         setIsLoading(false);
@@ -114,17 +128,15 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     }
   };
 
-  // Função que chama o instalador PWA via pwa-install
+  // Chama o instalador PWA
   const handleInstallApp = async () => {
     console.log("[PWAInstall] Tentando abrir prompt de instalação.");
-    // Se tivermos o deferredPrompt, podemos usá-lo
     if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      console.log(`Resposta do usuário: ${outcome}`);
+      console.log(`[PWAInstall] Resposta do usuário: ${outcome}`);
       setDeferredPrompt(null);
     } else {
-      // Se não tivermos o deferredPrompt, mostra uma mensagem alternativa
       alert('Para instalar, clique no menu do seu navegador e escolha "Adicionar à tela inicial".');
     }
     setShowInstallModal(false);
@@ -238,7 +250,9 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
                 <div className="w-full border-t border-border"></div>
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">Ou continue com</span>
+                <span className="bg-card px-2 text-muted-foreground">
+                  Ou continue com
+                </span>
               </div>
             </div>
             <div className="grid grid-cols-1 gap-4">
