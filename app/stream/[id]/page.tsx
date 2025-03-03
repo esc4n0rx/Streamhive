@@ -17,7 +17,6 @@ import { ShareModal } from '@/components/share-modal';
 import { ArrowLeft, Beef, Heart, Share2, ThumbsUp, Users, Smile, Send } from 'lucide-react';
 import Link from 'next/link';
 
-// Componente HLSPlayer para streams não YouTube
 const HLSPlayer = dynamic(() => import('@/components/HLSPlayer'), { ssr: false });
 
 interface Message {
@@ -57,7 +56,6 @@ export default function StreamPage() {
     return <div>Stream não encontrado</div>;
   }
 
-  // Estados
   const [stream, setStream] = useState<StreamDetails | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
@@ -155,7 +153,6 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar transmissão:", error));
   }, [streamId, router]);
 
-  // Busca as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -174,7 +171,6 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar mensagens:", error));
   }, [streamId]);
 
-  // Limpeza de reações antigas
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
       setReactions((prev) => prev.filter(r => Date.now() - parseInt(r.id) < 2000));
@@ -182,7 +178,6 @@ export default function StreamPage() {
     return () => clearInterval(cleanupInterval);
   }, []);
 
-  // Envia mensagem ao chat
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -200,7 +195,6 @@ export default function StreamPage() {
       .then(res => res.json())
       .then((data) => {
         console.log("[StreamPage] Mensagem enviada:", data);
-        // Caso o backend não emita via socket, adiciona localmente
         const message: Message = {
           id: Date.now().toString(),
           user: "Você",
@@ -213,12 +207,10 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao enviar mensagem:", error));
   };
 
-  // Toggle do seletor de reações
   const toggleReactionPicker = () => {
     setShowReactionPicker(prev => !prev);
   };
 
-  // Envia reação via socket
   const handleReaction = (emoji: string) => {
     console.log("[StreamPage] Enviando reação:", emoji);
     if (socketRef.current) {
@@ -236,7 +228,6 @@ export default function StreamPage() {
     setShowReactionPicker(false);
   };
 
-  // Função para deletar a stream (para o host)
   const handleDeleteStream = async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -262,15 +253,13 @@ export default function StreamPage() {
     }
   };
 
-  // Abre modal de compartilhamento
   const handleShare = () => {
     console.log("[StreamPage] Abrindo modal de compartilhamento");
     setShowShareModal(true);
   };
 
-  // Copia link da transmissão
   const handleCopyLink = () => {
-    const link = `https://streamhive.app/stream/${streamId}`;
+    const link = `https://streamhivex.vercel.app//stream/${streamId}`;
     navigator.clipboard.writeText(link);
     toast({
       title: "Link copiado!",
@@ -279,7 +268,6 @@ export default function StreamPage() {
     console.log("[StreamPage] Link copiado:", link);
   };
 
-  // Define qual player usar: YouTube ou HLS
   const isYouTube = stream?.videoUrl.includes('youtube.com') || stream?.videoUrl.includes('youtu.be');
 
   return (
@@ -305,7 +293,6 @@ export default function StreamPage() {
             <Share2 className="h-4 w-4 mr-2" />
             Compartilhar
           </Button>
-          {/* Botão para encerrar a transmissão, exibido apenas para o host */}
           {stream && localStorage.getItem('userId') === stream.host_id && (
             <Button variant="destructive" size="sm" onClick={handleDeleteStream}>
               Encerrar
@@ -339,8 +326,6 @@ export default function StreamPage() {
               controls
             />
           )}
-
-          {/* Exibe reações flutuantes */}
           <AnimatePresence>
             {reactions.map(reaction => (
               <motion.div
@@ -356,7 +341,6 @@ export default function StreamPage() {
             ))}
           </AnimatePresence>
 
-          {/* Botão para abrir seletor de reações sobre o player */}
           <div className="absolute top-4 right-4">
             <Button variant="ghost" size="icon" onClick={toggleReactionPicker}>
               <Smile className="h-5 w-5" />
@@ -378,7 +362,6 @@ export default function StreamPage() {
           </div>
         </div>
 
-        {/* Coluna do chat e informações */}
         <div className="lg:col-span-1 border-l border-border flex flex-col">
           <Tabs defaultValue="chat" className="flex flex-col flex-1">
             <TabsList className="mx-4 my-2 grid grid-cols-2">
@@ -415,7 +398,6 @@ export default function StreamPage() {
                 </div>
               </ScrollArea>
 
-              {/* Chat input fixo no rodapé para mobile */}
               <div className="p-4 bg-card border-t border-border fixed bottom-0 inset-x-0 lg:static">
                 <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
                   <Input
@@ -427,7 +409,6 @@ export default function StreamPage() {
                   <Button type="submit" size="icon">
                     <Send className="h-4 w-4" />
                   </Button>
-                  {/* Botão extra para enviar reação direto do chat */}
                   <Button variant="ghost" size="icon" onClick={() => handleReaction('❤️')}>
                     <Heart className="h-4 w-4" />
                   </Button>

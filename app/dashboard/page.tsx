@@ -25,6 +25,7 @@ export default function Dashboard() {
   const router = useRouter();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [streams, setStreams] = useState<StreamType[]>([]);
+  const [viewers, setViewers] = useState(1);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -38,6 +39,7 @@ export default function Dashboard() {
         .then((response) => response.json())
         .then((data) => {
           setStreams(data);
+          setViewers(data.viewers || 1);
         })
         .catch((error) => console.error("Erro ao buscar streams: ", error));
     }
@@ -178,7 +180,6 @@ export default function Dashboard() {
 
             <TabsContent value="favorites">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Se houver integração para favoritos, implemente aqui */}
                 <p className="col-span-full text-center text-muted-foreground">
                   Nenhum favorito por enquanto.
                 </p>

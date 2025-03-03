@@ -18,7 +18,6 @@ export default function Home() {
 
   return (
     <main className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
-      {/* Video Background */}
       <video 
         autoPlay 
         muted 
@@ -29,7 +28,6 @@ export default function Home() {
         <source src="https://cdn.pixabay.com/video/2021/04/01/69645-531604963.mp4" type="video/mp4" />
       </video>
       
-      {/* Honeycomb Pattern Overlay */}
       <div className="honeycomb-overlay"></div>
       
       <div className="z-10 w-full max-w-5xl flex flex-col items-center justify-center gap-8 px-4">

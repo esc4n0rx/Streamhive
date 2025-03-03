@@ -18,7 +18,7 @@ interface ShareModalProps {
 export function ShareModal({ isOpen, onClose, streamId }: ShareModalProps) {
   const [copied, setCopied] = useState(false);
   const { toast } = useToast();
-  const streamUrl = `https://streamhive.app/stream/${streamId}`;
+  const streamUrl = `https://streamhivex.vercel.app/stream/${streamId}`;
   
   const handleCopyLink = () => {
     navigator.clipboard.writeText(streamUrl);
@@ -36,7 +36,7 @@ export function ShareModal({ isOpen, onClose, streamId }: ShareModalProps) {
     
     switch (platform) {
       case 'twitter':
-        shareUrl = `https://twitter.com/intent/tweet?text=Assista comigo no StreamHive!&url=${encodeURIComponent(streamUrl)}`;
+        shareUrl = `https://x.com/intent/tweet?text=Assista comigo no StreamHive!&url=${encodeURIComponent(streamUrl)}`;
         break;
       case 'facebook':
         shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(streamUrl)}`;
