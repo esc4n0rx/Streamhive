@@ -61,7 +61,8 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
       }
       // Armazena o token para futuras requisições
       localStorage.setItem('token', data.token);
-      // Exibe modal de instalação do PWA antes de redirecionar
+      // Redefine o loading e exibe o modal de instalação do PWA
+      setIsLoading(false);
       setShowInstallModal(true);
     } catch (error) {
       console.error(error);
@@ -69,7 +70,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
       setIsLoading(false);
     }
   };
-
+  
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
@@ -86,6 +87,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
         return;
       }
       localStorage.setItem('token', data.token);
+      setIsLoading(false);
       setShowInstallModal(true);
     } catch (error) {
       console.error(error);
@@ -93,22 +95,22 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
       setIsLoading(false);
     }
   };
-
+  
   const handleSocialLogin = async (provider: string) => {
     setIsLoading(true);
     try {
       // Exemplo: implementar redirecionamento para o provedor de social login
-      // Após a autenticação, o usuário deve retornar com um token válido
       setTimeout(() => {
         localStorage.setItem('token', 'social-login-token');
-        setShowInstallModal(true);
         setIsLoading(false);
+        setShowInstallModal(true);
       }, 1500);
     } catch (error) {
       console.error(error);
       setIsLoading(false);
     }
   };
+  
 
   // Função para tratar o prompt de instalação do PWA
   const handleInstallApp = async () => {
