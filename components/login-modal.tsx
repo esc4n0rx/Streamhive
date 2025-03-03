@@ -244,10 +244,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
                 <Mail className="mr-2 h-4 w-4" />
                 Google
               </Button>
-              <Button variant="outline" type="button" onClick={() => handleSocialLogin('github')} disabled={isLoading}>
-                <Github className="mr-2 h-4 w-4" />
-                GitHub
-              </Button>
             </div>
           </div>
         </motion.div>
@@ -272,10 +268,10 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               Adicione nosso aplicativo à sua tela inicial para uma experiência completa.
             </p>
             <div className="flex justify-center gap-4">
-              <Button onClick={handleInstallApp} disabled={isLoading}>
+              <Button onClick={handleInstallApp}>
                 Instalar App
               </Button>
-              <Button variant="outline" onClick={handleSkipInstall} disabled={isLoading}>
+              <Button variant="outline" onClick={handleSkipInstall}>
                 Pular
               </Button>
             </div>
