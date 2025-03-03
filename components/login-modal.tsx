@@ -48,7 +48,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const response = await fetch('https://meaningful-selie-xcu-8d884618.koyeb.app/api/auth/login', {
+      const response = await fetch('https://backend-streamhive.onrender.com/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginEmail, password: loginPassword })
@@ -74,7 +74,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const response = await fetch('https://meaningful-selie-xcu-8d884618.koyeb.app/api/auth/register', {
+      const response = await fetch('https://backend-streamhive.onrender.com/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: registerName, email: registerEmail, password: registerPassword })
