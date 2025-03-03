@@ -17,7 +17,7 @@ import { ShareModal } from '@/components/share-modal';
 import { ArrowLeft, Beef, Heart, Share2, ThumbsUp, Users, Smile, Send } from 'lucide-react';
 import Link from 'next/link';
 
-// Componente HLSPlayer (implementado separadamente)
+// Componente HLSPlayer para streams não YouTube
 const HLSPlayer = dynamic(() => import('@/components/HLSPlayer'), { ssr: false });
 
 interface Message {
@@ -39,6 +39,7 @@ interface StreamDetails {
   title: string;
   description: string;
   host: string;
+  host_id: string;
   isPublic: boolean;
   videoUrl: string;
   viewers: number;
@@ -50,10 +51,10 @@ export default function StreamPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  // Logs para depuração
   console.log("[StreamPage] streamId:", streamId);
   if (!streamId) {
     console.error("[StreamPage] Nenhum streamId fornecido.");
+    return <div>Stream não encontrado</div>;
   }
 
   // Estados
@@ -66,19 +67,18 @@ export default function StreamPage() {
   const [viewers, setViewers] = useState(1);
   const [showShareModal, setShowShareModal] = useState(false);
   const [reactions, setReactions] = useState<Reaction[]>([]);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
   const playerContainerRef = useRef<HTMLDivElement>(null);
+  const playerRef = useRef<ReactPlayer>(null);
   const socketRef = useRef<any>(null);
 
-  // Conecta ao Socket.IO e entra na room do streamId
   useEffect(() => {
-    if (!streamId) return;
     console.log("[Socket] Conectando ao socket...");
     const socket = io('https://backend-streamhive.onrender.com');
     socketRef.current = socket;
 
     socket.on('connect', () => {
       console.log("[Socket] Conectado:", socket.id);
-      // Entrar na room específica do stream
       socket.emit('join-room', streamId);
       console.log("[Socket] Emitido 'join-room' para", streamId);
     });
@@ -88,7 +88,7 @@ export default function StreamPage() {
       setMessages((prev) => [...prev, msg]);
     });
 
-    socket.on('reaction:sent', (data: { emoji: string; user: string }) => {
+    socket.on('reaction:sent', (data: { emoji: string; user: string; roomId?: string }) => {
       console.log("[Socket] Recebida reação:", data);
       if (!playerContainerRef.current) return;
       const containerRect = playerContainerRef.current.getBoundingClientRect();
@@ -103,11 +103,23 @@ export default function StreamPage() {
 
     socket.on('player:update', (data: any) => {
       console.log("[Socket] Recebido player:update:", data);
-      // Exemplo: atualizar estado do player conforme necessário
-      if (data && data.time !== undefined) {
-        // Poderíamos armazenar o tempo atual e sincronizar o player
-        console.log("[Socket] Atualizando estado do player para:", data);
+      if (playerRef.current && stream && localStorage.getItem('userId') !== stream.host_id) {
+        const currentTime = playerRef.current.getCurrentTime();
+        if (Math.abs(currentTime - data.data.time) > 1) {
+          console.log("[Socket] Sincronizando player para o tempo:", data.data.time);
+          playerRef.current.seekTo(data.data.time, 'seconds');
+        }
       }
+    });
+
+    socket.on('user:joined', (data: { username: string; roomId: string }) => {
+      console.log("[Socket] Novo usuário entrou:", data.username);
+      setViewers((prev) => prev + 1);
+    });
+
+    socket.on('user:left', (data: { username: string; roomId: string }) => {
+      console.log("[Socket] Usuário saiu:", data.username);
+      setViewers((prev) => Math.max(prev - 1, 0));
     });
 
     socket.on('disconnect', () => {
@@ -118,9 +130,8 @@ export default function StreamPage() {
       console.log("[Socket] Desconectando...");
       socket.disconnect();
     };
-  }, [streamId]);
+  }, [streamId, stream]);
 
-  // Busca os detalhes da transmissão do backend
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) {
@@ -139,12 +150,12 @@ export default function StreamPage() {
       .then((data: StreamDetails) => {
         console.log("[StreamPage] Dados da transmissão:", data);
         setStream(data);
-        setViewers(data.viewers);
+        setViewers(data.viewers || 1);
       })
       .catch((error) => console.error("Erro ao buscar transmissão:", error));
   }, [streamId, router]);
 
-  // Busca as mensagens do chat do backend
+  // Busca as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -184,12 +195,12 @@ export default function StreamPage() {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ text: newMessage })
+      body: JSON.stringify({ text: newMessage, roomId: streamId })
     })
       .then(res => res.json())
       .then((data) => {
         console.log("[StreamPage] Mensagem enviada:", data);
-        // Adiciona a mensagem localmente (caso o backend não emita via socket)
+        // Caso o backend não emita via socket, adiciona localmente
         const message: Message = {
           id: Date.now().toString(),
           user: "Você",
@@ -202,7 +213,12 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao enviar mensagem:", error));
   };
 
-  // Envia reação via socket e exibe animação local
+  // Toggle do seletor de reações
+  const toggleReactionPicker = () => {
+    setShowReactionPicker(prev => !prev);
+  };
+
+  // Envia reação via socket
   const handleReaction = (emoji: string) => {
     console.log("[StreamPage] Enviando reação:", emoji);
     if (socketRef.current) {
@@ -217,13 +233,42 @@ export default function StreamPage() {
       y: containerRect.height - 20
     };
     setReactions((prev) => [...prev, reaction]);
+    setShowReactionPicker(false);
   };
 
+  // Função para deletar a stream (para o host)
+  const handleDeleteStream = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      console.log("[StreamPage] Deletando transmissão...");
+      const res = await fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: "Erro", description: data.message || "Erro ao encerrar a transmissão." });
+        return;
+      }
+      toast({ title: "Transmissão encerrada", description: "A transmissão foi encerrada com sucesso." });
+      router.push('/dashboard');
+    } catch (error) {
+      console.error("Erro ao deletar a transmissão:", error);
+      toast({ title: "Erro", description: "Erro ao encerrar a transmissão." });
+    }
+  };
+
+  // Abre modal de compartilhamento
   const handleShare = () => {
     console.log("[StreamPage] Abrindo modal de compartilhamento");
     setShowShareModal(true);
   };
 
+  // Copia link da transmissão
   const handleCopyLink = () => {
     const link = `https://streamhive.app/stream/${streamId}`;
     navigator.clipboard.writeText(link);
@@ -260,6 +305,12 @@ export default function StreamPage() {
             <Share2 className="h-4 w-4 mr-2" />
             Compartilhar
           </Button>
+          {/* Botão para encerrar a transmissão, exibido apenas para o host */}
+          {stream && localStorage.getItem('userId') === stream.host_id && (
+            <Button variant="destructive" size="sm" onClick={handleDeleteStream}>
+              Encerrar
+            </Button>
+          )}
         </div>
       </header>
 
@@ -267,6 +318,7 @@ export default function StreamPage() {
         <div className="lg:col-span-3 bg-black relative" ref={playerContainerRef}>
           {isYouTube ? (
             <ReactPlayer
+              ref={playerRef}
               url={stream?.videoUrl || ''}
               width="100%"
               height="100%"
@@ -303,16 +355,38 @@ export default function StreamPage() {
               </motion.div>
             ))}
           </AnimatePresence>
+
+          {/* Botão para abrir seletor de reações sobre o player */}
+          <div className="absolute top-4 right-4">
+            <Button variant="ghost" size="icon" onClick={toggleReactionPicker}>
+              <Smile className="h-5 w-5" />
+            </Button>
+            {showReactionPicker && (
+              <div className="absolute right-0 mt-2 bg-card border border-border rounded shadow-lg p-2 z-50">
+                {['👍', '❤️', '😂', '😮', '👏'].map((emoji) => (
+                  <Button
+                    key={emoji}
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleReaction(emoji)}
+                  >
+                    {emoji}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        <div className="lg:col-span-1 border-l border-border flex flex-col h-[calc(100vh-65px)]">
-          <Tabs defaultValue="chat" className="flex flex-col h-full">
+        {/* Coluna do chat e informações */}
+        <div className="lg:col-span-1 border-l border-border flex flex-col">
+          <Tabs defaultValue="chat" className="flex flex-col flex-1">
             <TabsList className="mx-4 my-2 grid grid-cols-2">
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="info">Info</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="chat" className="flex-1 flex flex-col p-0 m-0">
+            <TabsContent value="chat" className="flex-1 flex flex-col overflow-hidden">
               <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4">
                   {messages.map((msg) => (
@@ -341,27 +415,24 @@ export default function StreamPage() {
                 </div>
               </ScrollArea>
 
-              <Separator />
-
-              <form onSubmit={handleSendMessage} className="p-4 flex items-center space-x-2">
-                <Input
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  placeholder="Envie uma mensagem..."
-                  className="flex-1"
-                />
-                <Button type="submit" size="icon">
-                  <Send className="h-4 w-4" />
-                </Button>
-                {/* Ícone de reação extra no chat */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => handleReaction('❤️')}
-                >
-                  <Heart className="h-4 w-4" />
-                </Button>
-              </form>
+              {/* Chat input fixo no rodapé para mobile */}
+              <div className="p-4 bg-card border-t border-border fixed bottom-0 inset-x-0 lg:static">
+                <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
+                  <Input
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Envie uma mensagem..."
+                    className="flex-1"
+                  />
+                  <Button type="submit" size="icon">
+                    <Send className="h-4 w-4" />
+                  </Button>
+                  {/* Botão extra para enviar reação direto do chat */}
+                  <Button variant="ghost" size="icon" onClick={() => handleReaction('❤️')}>
+                    <Heart className="h-4 w-4" />
+                  </Button>
+                </form>
+              </div>
             </TabsContent>
 
             <TabsContent value="info" className="flex-1 p-4 m-0 overflow-auto">
@@ -406,19 +477,11 @@ export default function StreamPage() {
                 <div>
                   <h3 className="text-sm font-medium">Compartilhar</h3>
                   <div className="mt-2 space-y-2">
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start"
-                      onClick={handleCopyLink}
-                    >
+                    <Button variant="outline" className="w-full justify-start" onClick={handleCopyLink}>
                       <Link href="#" className="mr-2 h-4 w-4" />
                       Copiar link
                     </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-start"
-                      onClick={handleShare}
-                    >
+                    <Button variant="outline" className="w-full justify-start" onClick={handleShare}>
                       <Share2 className="mr-2 h-4 w-4" />
                       Mais opções
                     </Button>
@@ -430,11 +493,7 @@ export default function StreamPage() {
         </div>
       </main>
 
-      <ShareModal
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        streamId={streamId}
-      />
+      <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} streamId={streamId} />
     </div>
   );
 }
