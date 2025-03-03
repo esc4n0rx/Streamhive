@@ -55,6 +55,7 @@
     "eslint": "8.49.0",
     "eslint-config-next": "13.5.1",
     "framer-motion": "^11.0.8",
+    "hls.js": "^1.5.20",
     "input-otp": "^1.2.4",
     "lodash.template": "^4.5.0",
     "lucide-react": "^0.446.0",
