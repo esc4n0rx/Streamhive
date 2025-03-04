@@ -50,23 +50,25 @@ export default function StreamPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  // Se streamId não for válido, encerre
   if (!streamId) {
     console.error("[StreamPage] Nenhum streamId fornecido.");
     return <div>Stream não encontrado</div>;
   }
 
+  // Estados
   const [stream, setStream] = useState<StreamDetails | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [viewers, setViewers] = useState(1);
+  const [viewers, setViewers] = useState<number>(1);
   const [showShareModal, setShowShareModal] = useState(false);
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  // Debug flag – defina para true para exibir painel de debug
+  const [debug, setDebug] = useState(false);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
@@ -74,8 +76,9 @@ export default function StreamPage() {
   const lastEmitTimeRef = useRef<number>(0);
   const queuedPlayerTimeRef = useRef<number | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
+  const currentUserEmail = localStorage.getItem("userEmail") || "Você";
 
-  // Conecta ao socket e registra eventos
+  // Conexão com Socket.IO e registro de eventos
   useEffect(() => {
     console.log("[Socket] Conectando ao socket...");
     const socket = io("https://backend-streamhive.onrender.com");
@@ -89,14 +92,20 @@ export default function StreamPage() {
 
     socket.on("chat:new-message", (msg: Message) => {
       console.log("[Socket] Recebida nova mensagem:", msg);
-      setMessages((prev) => [...prev, msg]);
+      // Se a mensagem já foi enviada localmente, evite duplicação
+      setMessages((prev) => {
+        if (prev.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) {
+          return prev;
+        }
+        return [...prev, msg];
+      });
     });
 
     socket.on("reaction:sent", (data: { emoji: string; user: string; roomId?: string }) => {
       console.log("[Socket] Recebida reação:", data);
       if (!playerContainerRef.current) return;
       const rect = playerContainerRef.current.getBoundingClientRect();
-      const reaction = {
+      const reaction: Reaction = {
         id: Date.now().toString(),
         emoji: data.emoji,
         x: Math.random() * rect.width,
@@ -109,7 +118,6 @@ export default function StreamPage() {
       console.log("[Socket] Recebido player:update:", data);
       // Apenas sincroniza para convidados
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
-        // Se o player não estiver pronto, guarda o tempo para quando estiver
         if (!playerReady) {
           queuedPlayerTimeRef.current = data.data.time;
           return;
@@ -142,6 +150,7 @@ export default function StreamPage() {
     };
   }, [streamId, stream, playerReady]);
 
+  // Busca detalhes da transmissão e define se o usuário é host
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -167,6 +176,7 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar transmissão:", error));
   }, [streamId, router]);
 
+  // Busca as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -185,7 +195,7 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar mensagens:", error));
   }, [streamId]);
 
-
+  // Limpa reações antigas a cada 2 segundos
   useEffect(() => {
     const interval = setInterval(() => {
       setReactions((prev) => prev.filter((r) => Date.now() - parseInt(r.id) < 2000));
@@ -193,20 +203,18 @@ export default function StreamPage() {
     return () => clearInterval(interval);
   }, []);
 
-
+  // Handler quando o player estiver pronto
   const handlePlayerReady = () => {
     console.log("[StreamPage] Player pronto.");
     setPlayerReady(true);
     if (queuedPlayerTimeRef.current !== null && playerRef.current) {
-      console.log(
-        "[StreamPage] Aplicando sincronização em fila com tempo:",
-        queuedPlayerTimeRef.current
-      );
+      console.log("[StreamPage] Aplicando sincronização em fila com tempo:", queuedPlayerTimeRef.current);
       playerRef.current.seekTo(queuedPlayerTimeRef.current, "seconds");
       queuedPlayerTimeRef.current = null;
     }
   };
 
+  // Emite atualizações do player se for o host
   const handleProgress = (state: { playedSeconds: number }) => {
     if (isHost && socketRef.current) {
       const now = Date.now();
@@ -226,6 +234,7 @@ export default function StreamPage() {
     }
   };
 
+  // Envia mensagem – para evitar duplicação, não adiciona localmente se já existir
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -243,13 +252,7 @@ export default function StreamPage() {
       .then((res) => res.json())
       .then((data) => {
         console.log("[StreamPage] Mensagem enviada:", data);
-        const message: Message = {
-          id: Date.now().toString(),
-          user: "Você",
-          text: newMessage,
-          timestamp: new Date().toISOString(),
-        };
-        setMessages((prev) => [...prev, message]);
+        // Aqui, não adicionamos a mensagem localmente pois o socket deve emitir a mensagem
         setNewMessage("");
       })
       .catch((error) => console.error("Erro ao enviar mensagem:", error));
@@ -316,7 +319,23 @@ export default function StreamPage() {
     console.log("[StreamPage] Link copiado:", link);
   };
 
+  // Decide qual player usar: YouTube ou HLS
   const isYouTube = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
+
+  // Painel de debug – visível se debug for true
+  const debugPanel = debug && (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 0.8 }}
+      className="fixed bottom-0 left-0 bg-black text-white p-2 text-xs z-50"
+    >
+      <div>Tempo atual: {playerRef.current ? playerRef.current.getCurrentTime().toFixed(2) : "-"}</div>
+      <div>Última emissão: {lastEmitTimeRef.current}</div>
+      <div>Queued Time: {queuedPlayerTimeRef.current ?? "-"}</div>
+      <div>Viewers: {viewers}</div>
+      <div>Player Ready: {playerReady ? "Sim" : "Não"}</div>
+    </motion.div>
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -341,7 +360,7 @@ export default function StreamPage() {
             <Share2 className="h-4 w-4 mr-2" />
             Compartilhar
           </Button>
-          {stream && localStorage.getItem("userId") === stream.host_id && (
+          {isHost && (
             <Button variant="destructive" size="sm" onClick={handleDeleteStream}>
               Encerrar
             </Button>
@@ -388,7 +407,6 @@ export default function StreamPage() {
               </motion.div>
             ))}
           </AnimatePresence>
-
           <div className="absolute top-4 right-4">
             <Button variant="ghost" size="icon" onClick={() => setShowReactionPicker((prev) => !prev)}>
               <Smile className="h-5 w-5" />
@@ -411,7 +429,6 @@ export default function StreamPage() {
               <TabsTrigger value="chat">Chat</TabsTrigger>
               <TabsTrigger value="info">Info</TabsTrigger>
             </TabsList>
-
             <TabsContent value="chat" className="flex-1 flex flex-col overflow-hidden">
               <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4">
@@ -435,7 +452,6 @@ export default function StreamPage() {
                   ))}
                 </div>
               </ScrollArea>
-
               <div className="p-4 bg-card border-t border-border fixed bottom-0 inset-x-0 lg:static">
                 <form onSubmit={handleSendMessage} className="flex items-center space-x-2">
                   <Input
@@ -453,7 +469,6 @@ export default function StreamPage() {
                 </form>
               </div>
             </TabsContent>
-
             <TabsContent value="info" className="flex-1 p-4 m-0 overflow-auto">
               <div className="space-y-4">
                 <div>
@@ -462,37 +477,45 @@ export default function StreamPage() {
                     {stream ? `Iniciada por ${stream.host}` : "Carregando..."}
                   </p>
                 </div>
-
                 <Separator />
-
                 <div>
-                  <h3 className="text-sm font-medium">Participantes ({viewers})</h3>
+                  <h3 className="text-sm font-medium">Participantes</h3>
                   <div className="mt-2 space-y-2">
-                    <div className="flex items-center">
-                      <div className="bg-primary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
-                        {stream ? stream.host.charAt(0) : "C"}
+                    {/* Se for host, mostramos somente uma linha */}
+                    {isHost ? (
+                      <div className="flex items-center">
+                        <div className="bg-primary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
+                          {stream ? stream.host.charAt(0) : "C"}
+                        </div>
+                        <span>{stream ? `${stream.host} (anfitrião)` : "Carregando..."}</span>
                       </div>
-                      <span>{stream ? `${stream.host} (anfitrião)` : "Carregando..."}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="bg-secondary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
-                        V
-                      </div>
-                      <span>Você</span>
-                    </div>
-                    {viewers > 2 && (
+                    ) : (
+                      <>
+                        <div className="flex items-center">
+                          <div className="bg-primary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
+                            {stream ? stream.host.charAt(0) : "C"}
+                          </div>
+                          <span>{stream ? `${stream.host} (anfitrião)` : "Carregando..."}</span>
+                        </div>
+                        <div className="flex items-center">
+                          <div className="bg-secondary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
+                            V
+                          </div>
+                          <span>Você</span>
+                        </div>
+                      </>
+                    )}
+                    {viewers > (isHost ? 1 : 2) && (
                       <div className="flex items-center">
                         <div className="bg-secondary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
-                          +{viewers - 2}
+                          +{viewers - (isHost ? 1 : 2)}
                         </div>
                         <span>outros</span>
                       </div>
                     )}
                   </div>
                 </div>
-
                 <Separator />
-
                 <div>
                   <h3 className="text-sm font-medium">Compartilhar</h3>
                   <div className="mt-2 space-y-2">
@@ -513,6 +536,8 @@ export default function StreamPage() {
       </main>
 
       <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} streamId={streamId} />
+
+      {debug && debugPanel}
     </div>
   );
 }

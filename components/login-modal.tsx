@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
-import { Github, Mail } from 'lucide-react';
-import { PwaInstallModal } from '@/components/PwaInstallModal'; // Importa o novo componente
+import { Mail } from 'lucide-react';
+import { PwaInstallModal } from '@/components/PwaInstallModal';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -21,13 +21,24 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   const [loginEmail, setLoginEmail] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
-  
+
   const [registerName, setRegisterName] = useState<string>('');
   const [registerEmail, setRegisterEmail] = useState<string>('');
   const [registerPassword, setRegisterPassword] = useState<string>('');
 
-  // Controla a exibição do modal de instalação via PwaInstallModal
   const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+
+  // Função para salvar token e dados do usuário no localStorage
+  const storeUserData = (data: any) => {
+    if (data.token) {
+      localStorage.setItem('token', data.token);
+    }
+    if (data.user) {
+      localStorage.setItem('userId', data.user.id);
+      localStorage.setItem('userEmail', data.user.email);
+      localStorage.setItem('userName', data.user.name);
+    }
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +55,8 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
         setIsLoading(false);
         return;
       }
-      localStorage.setItem('token', data.token);
+      // Salva token e informações do usuário
+      storeUserData(data);
       setIsLoading(false);
       setShowInstallModal(true);
     } catch (error) {
@@ -69,7 +81,8 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
         setIsLoading(false);
         return;
       }
-      localStorage.setItem('token', data.token);
+      // Salva token e informações do usuário
+      storeUserData(data);
       setIsLoading(false);
       setShowInstallModal(true);
     } catch (error) {
@@ -82,9 +95,17 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const handleSocialLogin = async (provider: string) => {
     setIsLoading(true);
     try {
-      // Exemplo de social login (simulação)
+      // Simulação de social login: suponha que o backend retorne também os dados do usuário
       setTimeout(() => {
-        localStorage.setItem('token', 'social-login-token');
+        const fakeData = {
+          token: "social-login-token",
+          user: {
+            id: "social_user_id",
+            email: "social@example.com",
+            name: "Social User"
+          }
+        };
+        storeUserData(fakeData);
         setIsLoading(false);
         setShowInstallModal(true);
       }, 1500);
@@ -94,6 +115,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     }
   };
 
+  // Se o modal não estiver aberto, não renderiza nada
   if (!isOpen) return null;
 
   return (
