@@ -17,6 +17,7 @@ import { ShareModal } from "@/components/share-modal";
 import { ArrowLeft, Beef, Heart, Share2, Users, Smile, Send } from "lucide-react";
 import Link from "next/link";
 
+// Importa o player HLS dinamicamente
 const HLSPlayer = dynamic(() => import("@/components/HLSPlayer"), { ssr: false });
 
 interface Message {
@@ -57,6 +58,7 @@ export default function StreamPage() {
 
   // Estados
   const [stream, setStream] = useState<StreamDetails | null>(null);
+  const [forceShowDebug, setForceShowDebug] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
@@ -76,7 +78,20 @@ export default function StreamPage() {
   const lastEmitTimeRef = useRef<number>(0);
   const queuedPlayerTimeRef = useRef<number | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
-  const currentUserEmail = localStorage.getItem("userEmail") || "Você";
+
+  // Função para determinar a URL do vídeo (aplicando proxy se necessário)
+  const getVideoUrl = () => {
+    if (!stream) return "";
+    let url = stream.videoUrl;
+    const isYouTube = url.includes("youtube.com") || url.includes("youtu.be");
+    if (!isYouTube) {
+      // Se for http, usamos o proxy para evitar mixed content
+      if (url.startsWith("http://")) {
+        url = `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(url)}`;
+      }
+    }
+    return url;
+  };
 
   // Conexão com Socket.IO e registro de eventos
   useEffect(() => {
@@ -92,8 +107,8 @@ export default function StreamPage() {
 
     socket.on("chat:new-message", (msg: Message) => {
       console.log("[Socket] Recebida nova mensagem:", msg);
-      // Se a mensagem já foi enviada localmente, evite duplicação
       setMessages((prev) => {
+        // Evita duplicação comparando timestamp e texto
         if (prev.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) {
           return prev;
         }
@@ -116,7 +131,7 @@ export default function StreamPage() {
 
     socket.on("player:update", (data: any) => {
       console.log("[Socket] Recebido player:update:", data);
-      // Apenas sincroniza para convidados
+      // Sincroniza somente para convidados (não para o host)
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
         if (!playerReady) {
           queuedPlayerTimeRef.current = data.data.time;
@@ -132,11 +147,18 @@ export default function StreamPage() {
 
     socket.on("user:joined", (data: { username: string; roomId: string }) => {
       console.log("[Socket] Novo usuário entrou:", data.username);
-      setViewers((prev) => prev + 1);
+      // Atualizamos a contagem apenas para convidados, pois o host já está no stream
+      if (localStorage.getItem("userId") !== stream?.host_id) {
+        setViewers((prev) => prev + 1);
+      } else {
+        // Se o host recebe o evento, não altera
+        setViewers((prev) => prev);
+      }
     });
 
     socket.on("user:left", (data: { username: string; roomId: string }) => {
       console.log("[Socket] Usuário saiu:", data.username);
+      // Atualiza a contagem garantindo que não fique negativa
       setViewers((prev) => Math.max(prev - 1, 0));
     });
 
@@ -169,7 +191,9 @@ export default function StreamPage() {
       .then((data: StreamDetails) => {
         console.log("[StreamPage] Dados da transmissão:", data);
         setStream(data);
-        setViewers(data.viewers || 1);
+        // Se for host, removemos a duplicidade: exibimos (viewers - 1)
+        const initialViewers = data.viewers || 1;
+        setViewers(initialViewers);
         const currentUserId = localStorage.getItem("userId");
         setIsHost(currentUserId !== null && currentUserId === data.host_id);
       })
@@ -234,7 +258,7 @@ export default function StreamPage() {
     }
   };
 
-  // Envia mensagem – para evitar duplicação, não adiciona localmente se já existir
+  // Envia mensagem – o socket deve emitir a mensagem para evitar duplicação
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -252,7 +276,7 @@ export default function StreamPage() {
       .then((res) => res.json())
       .then((data) => {
         console.log("[StreamPage] Mensagem enviada:", data);
-        // Aqui, não adicionamos a mensagem localmente pois o socket deve emitir a mensagem
+        // Não adicionamos localmente; o socket emitirá a mensagem
         setNewMessage("");
       })
       .catch((error) => console.error("Erro ao enviar mensagem:", error));
@@ -269,7 +293,7 @@ export default function StreamPage() {
     }
     if (!playerContainerRef.current) return;
     const rect = playerContainerRef.current.getBoundingClientRect();
-    const reaction = {
+    const reaction: Reaction = {
       id: Date.now().toString(),
       emoji,
       x: Math.random() * rect.width,
@@ -319,23 +343,21 @@ export default function StreamPage() {
     console.log("[StreamPage] Link copiado:", link);
   };
 
-  // Decide qual player usar: YouTube ou HLS
+  // Define qual player usar: YouTube ou HLS
   const isYouTube = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
 
-  // Painel de debug – visível se debug for true
-  const debugPanel = debug && (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 0.8 }}
-      className="fixed bottom-0 left-0 bg-black text-white p-2 text-xs z-50"
-    >
-      <div>Tempo atual: {playerRef.current ? playerRef.current.getCurrentTime().toFixed(2) : "-"}</div>
-      <div>Última emissão: {lastEmitTimeRef.current}</div>
-      <div>Queued Time: {queuedPlayerTimeRef.current ?? "-"}</div>
-      <div>Viewers: {viewers}</div>
-      <div>Player Ready: {playerReady ? "Sim" : "Não"}</div>
-    </motion.div>
-  );
+  // Para conteúdo não-YouTube, se a URL for HTTP, usa o proxy
+  const videoUrl = isYouTube ? stream?.videoUrl || "" : (() => {
+    if (!stream?.videoUrl) return "";
+    if (stream.videoUrl.startsWith("http://")) {
+      return `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(stream.videoUrl)}`;
+    }
+    return stream.videoUrl;
+  })();
+
+  // Ajuste na contagem de participantes para exibir corretamente
+  // Se for host, subtrai 1 para não contar duplicadamente
+  const displayedViewers = isHost ? Math.max(viewers - 1, 0) : viewers;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -354,7 +376,7 @@ export default function StreamPage() {
         <div className="flex items-center space-x-2">
           <div className="flex items-center text-sm text-muted-foreground mr-4">
             <Users className="h-4 w-4 mr-1" />
-            <span>{viewers} assistindo</span>
+            <span>{displayedViewers} assistindo</span>
           </div>
           <Button variant="outline" size="sm" onClick={handleShare}>
             <Share2 className="h-4 w-4 mr-2" />
@@ -386,7 +408,7 @@ export default function StreamPage() {
             />
           ) : (
             <HLSPlayer
-              url={stream?.videoUrl || ""}
+              url={videoUrl}
               playing={isPlaying}
               volume={volume}
               muted={isMuted}
@@ -481,7 +503,6 @@ export default function StreamPage() {
                 <div>
                   <h3 className="text-sm font-medium">Participantes</h3>
                   <div className="mt-2 space-y-2">
-                    {/* Se for host, mostramos somente uma linha */}
                     {isHost ? (
                       <div className="flex items-center">
                         <div className="bg-primary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
@@ -505,10 +526,10 @@ export default function StreamPage() {
                         </div>
                       </>
                     )}
-                    {viewers > (isHost ? 1 : 2) && (
+                    {displayedViewers > (isHost ? 1 : 2) && (
                       <div className="flex items-center">
                         <div className="bg-secondary rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium mr-2">
-                          +{viewers - (isHost ? 1 : 2)}
+                          +{displayedViewers - (isHost ? 1 : 2)}
                         </div>
                         <span>outros</span>
                       </div>
@@ -537,7 +558,19 @@ export default function StreamPage() {
 
       <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} streamId={streamId} />
 
-      {debug && debugPanel}
+      {(debug || forceShowDebug) && (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 0.8 }}
+        className="fixed bottom-0 left-0 bg-black text-white p-2 text-xs z-50"
+      >
+        <div>Tempo atual: {playerRef.current ? playerRef.current.getCurrentTime().toFixed(2) : "-"}</div>
+        <div>Última emissão: {lastEmitTimeRef.current}</div>
+        <div>Queued Time: {queuedPlayerTimeRef.current ?? "-"}</div>
+        <div>Viewers: {viewers}</div>
+        <div>Player Ready: {playerReady ? "Sim" : "Não"}</div>
+      </motion.div>
+    )}
     </div>
   );
 }
