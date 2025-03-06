@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
@@ -17,7 +16,6 @@ import { ShareModal } from "@/components/share-modal";
 import { ArrowLeft, Beef, Heart, Share2, Users, Smile, Send } from "lucide-react";
 import Link from "next/link";
 
-// Importa o player HLS dinamicamente
 const HLSPlayer = dynamic(() => import("@/components/HLSPlayer"), { ssr: false });
 
 interface Message {
@@ -69,9 +67,11 @@ export default function StreamPage() {
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [isHost, setIsHost] = useState(false);
+  const [playerError, setPlayerError] = useState<string | null>(null);
+  
   // Debug flag – defina para true para exibir painel de debug
   const [debug, setDebug] = useState(false);
-
+  
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
   const socketRef = useRef<any>(null);
@@ -82,14 +82,19 @@ export default function StreamPage() {
   // Função para determinar a URL do vídeo (aplicando proxy se necessário)
   const getVideoUrl = () => {
     if (!stream) return "";
+    
     let url = stream.videoUrl;
     const isYouTube = url.includes("youtube.com") || url.includes("youtu.be");
+    
     if (!isYouTube) {
       // Se for http, usamos o proxy para evitar mixed content
       if (url.startsWith("http://")) {
+        console.log("[StreamPage] Aplicando proxy para URL HTTP:", url);
         url = `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(url)}`;
       }
     }
+    
+    console.log("[StreamPage] URL final do vídeo:", url);
     return url;
   };
 
@@ -119,6 +124,7 @@ export default function StreamPage() {
     socket.on("reaction:sent", (data: { emoji: string; user: string; roomId?: string }) => {
       console.log("[Socket] Recebida reação:", data);
       if (!playerContainerRef.current) return;
+      
       const rect = playerContainerRef.current.getBoundingClientRect();
       const reaction: Reaction = {
         id: Date.now().toString(),
@@ -126,6 +132,7 @@ export default function StreamPage() {
         x: Math.random() * rect.width,
         y: rect.height - 20,
       };
+      
       setReactions((prev) => [...prev, reaction]);
     });
 
@@ -137,6 +144,7 @@ export default function StreamPage() {
           queuedPlayerTimeRef.current = data.data.time;
           return;
         }
+        
         const currentTime = playerRef.current.getCurrentTime();
         if (Math.abs(currentTime - data.data.time) > 1) {
           console.log("[Socket] Sincronizando player para o tempo:", data.data.time);
@@ -180,6 +188,7 @@ export default function StreamPage() {
       router.push("/");
       return;
     }
+    
     console.log("[StreamPage] Buscando detalhes da transmissão...");
     fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}`, {
       headers: {
@@ -191,19 +200,28 @@ export default function StreamPage() {
       .then((data: StreamDetails) => {
         console.log("[StreamPage] Dados da transmissão:", data);
         setStream(data);
+        
         // Se for host, removemos a duplicidade: exibimos (viewers - 1)
         const initialViewers = data.viewers || 1;
         setViewers(initialViewers);
+        
         const currentUserId = localStorage.getItem("userId");
         setIsHost(currentUserId !== null && currentUserId === data.host_id);
       })
-      .catch((error) => console.error("Erro ao buscar transmissão:", error));
-  }, [streamId, router]);
+      .catch((error) => {
+        console.error("Erro ao buscar transmissão:", error);
+        toast({ 
+          title: "Erro", 
+          description: "Não foi possível carregar os detalhes da transmissão." 
+        });
+      });
+  }, [streamId, router, toast]);
 
   // Busca as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
+    
     console.log("[StreamPage] Buscando mensagens do chat...");
     fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}/messages`, {
       headers: {
@@ -224,6 +242,7 @@ export default function StreamPage() {
     const interval = setInterval(() => {
       setReactions((prev) => prev.filter((r) => Date.now() - parseInt(r.id) < 2000));
     }, 2000);
+    
     return () => clearInterval(interval);
   }, []);
 
@@ -231,10 +250,30 @@ export default function StreamPage() {
   const handlePlayerReady = () => {
     console.log("[StreamPage] Player pronto.");
     setPlayerReady(true);
+    setPlayerError(null);
+    
     if (queuedPlayerTimeRef.current !== null && playerRef.current) {
       console.log("[StreamPage] Aplicando sincronização em fila com tempo:", queuedPlayerTimeRef.current);
       playerRef.current.seekTo(queuedPlayerTimeRef.current, "seconds");
       queuedPlayerTimeRef.current = null;
+    }
+  };
+
+  // Handler para erros no player
+  const handlePlayerError = (error: any) => {
+    console.error("[StreamPage] Erro no player:", error);
+    setPlayerError("Ocorreu um erro ao reproduzir o vídeo. Tente recarregar a página.");
+    
+    // Tenta reproduzir novamente com proxy se for uma URL HTTP não-YouTube
+    if (stream && !stream.videoUrl.includes("youtube.com") && !stream.videoUrl.includes("youtu.be")) {
+      if (!stream.videoUrl.startsWith("http://") && !stream.videoUrl.startsWith("https://")) {
+        console.log("[StreamPage] Tentando adicionar protocolo HTTP para URL:", stream.videoUrl);
+        const newUrl = `http://${stream.videoUrl}`;
+        setStream({
+          ...stream,
+          videoUrl: newUrl
+        });
+      }
     }
   };
 
@@ -262,8 +301,10 @@ export default function StreamPage() {
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
+    
     const token = localStorage.getItem("token");
     if (!token) return;
+    
     console.log("[StreamPage] Enviando mensagem:", newMessage);
     fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}/messages`, {
       method: "POST",
@@ -291,6 +332,7 @@ export default function StreamPage() {
     if (socketRef.current) {
       socketRef.current.emit("reaction:sent", { roomId: streamId, emoji });
     }
+    
     if (!playerContainerRef.current) return;
     const rect = playerContainerRef.current.getBoundingClientRect();
     const reaction: Reaction = {
@@ -299,6 +341,7 @@ export default function StreamPage() {
       x: Math.random() * rect.width,
       y: rect.height - 20,
     };
+    
     setReactions((prev) => [...prev, reaction]);
     setShowReactionPicker(false);
   };
@@ -306,6 +349,7 @@ export default function StreamPage() {
   const handleDeleteStream = async () => {
     const token = localStorage.getItem("token");
     if (!token) return;
+    
     try {
       console.log("[StreamPage] Deletando transmissão...");
       const res = await fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}`, {
@@ -315,11 +359,13 @@ export default function StreamPage() {
           Authorization: `Bearer ${token}`,
         },
       });
+      
       const data = await res.json();
       if (!res.ok) {
         toast({ title: "Erro", description: data.message || "Erro ao encerrar a transmissão." });
         return;
       }
+      
       toast({ title: "Transmissão encerrada", description: "A transmissão foi encerrada com sucesso." });
       router.push("/dashboard");
     } catch (error) {
@@ -343,21 +389,35 @@ export default function StreamPage() {
     console.log("[StreamPage] Link copiado:", link);
   };
 
+  // Função para tentar novamente em caso de erro
+  const handleRetryVideo = () => {
+    if (!stream) return;
+    
+    console.log("[StreamPage] Tentando reproduzir novamente o vídeo");
+    setPlayerError(null);
+
+    // Criar uma cópia para forçar re-renderização
+    setStream({...stream});
+  };
+
   // Define qual player usar: YouTube ou HLS
   const isYouTube = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
-
-  // Para conteúdo não-YouTube, se a URL for HTTP, usa o proxy
-  const videoUrl = isYouTube ? stream?.videoUrl || "" : (() => {
-    if (!stream?.videoUrl) return "";
-    if (stream.videoUrl.startsWith("http://")) {
-      return `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(stream.videoUrl)}`;
-    }
-    return stream.videoUrl;
-  })();
-
+  
+  // Para conteúdo não-YouTube, prepara a URL apropriadamente
+  const videoUrl = getVideoUrl();
+  
   // Ajuste na contagem de participantes para exibir corretamente
   // Se for host, subtrai 1 para não contar duplicadamente
   const displayedViewers = isHost ? Math.max(viewers - 1, 0) : viewers;
+
+  // Log de depuração para a URL do vídeo
+  useEffect(() => {
+    if (stream) {
+      console.log("[StreamPage] URL da transmissão:", stream.videoUrl);
+      console.log("[StreamPage] É YouTube?", isYouTube);
+      console.log("[StreamPage] URL final para o player:", videoUrl);
+    }
+  }, [stream, isYouTube, videoUrl]);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -389,10 +449,14 @@ export default function StreamPage() {
           )}
         </div>
       </header>
-
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-4">
         <div className="lg:col-span-3 bg-black relative" ref={playerContainerRef}>
-          {isYouTube ? (
+          {playerError ? (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+              <p className="text-white mb-4">{playerError}</p>
+              <Button onClick={handleRetryVideo}>Tentar novamente</Button>
+            </div>
+          ) : isYouTube ? (
             <ReactPlayer
               ref={playerRef}
               url={stream?.videoUrl || ""}
@@ -405,6 +469,7 @@ export default function StreamPage() {
               config={{ youtube: { playerVars: { showinfo: 1 } } }}
               onReady={handlePlayerReady}
               onProgress={handleProgress}
+              onError={handlePlayerError}
             />
           ) : (
             <HLSPlayer
@@ -430,7 +495,7 @@ export default function StreamPage() {
             ))}
           </AnimatePresence>
           <div className="absolute top-4 right-4">
-            <Button variant="ghost" size="icon" onClick={() => setShowReactionPicker((prev) => !prev)}>
+            <Button variant="ghost" size="icon" onClick={toggleReactionPicker}>
               <Smile className="h-5 w-5" />
             </Button>
             {showReactionPicker && (
@@ -444,7 +509,6 @@ export default function StreamPage() {
             )}
           </div>
         </div>
-
         <div className="lg:col-span-1 border-l border-border flex flex-col">
           <Tabs defaultValue="chat" className="flex flex-col flex-1">
             <TabsList className="mx-4 my-2 grid grid-cols-2">
@@ -550,27 +614,39 @@ export default function StreamPage() {
                     </Button>
                   </div>
                 </div>
+                {debug && (
+                  <>
+                    <Separator />
+                    <div>
+                      <h3 className="text-sm font-medium">Informações de Debug</h3>
+                      <div className="mt-2 space-y-1 text-xs">
+                        <p>URL original: {stream?.videoUrl}</p>
+                        <p>URL do player: {videoUrl}</p>
+                        <p>É YouTube: {isYouTube ? "Sim" : "Não"}</p>
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
             </TabsContent>
           </Tabs>
         </div>
       </main>
-
       <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} streamId={streamId} />
-
       {(debug || forceShowDebug) && (
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 0.8 }}
-        className="fixed bottom-0 left-0 bg-black text-white p-2 text-xs z-50"
-      >
-        <div>Tempo atual: {playerRef.current ? playerRef.current.getCurrentTime().toFixed(2) : "-"}</div>
-        <div>Última emissão: {lastEmitTimeRef.current}</div>
-        <div>Queued Time: {queuedPlayerTimeRef.current ?? "-"}</div>
-        <div>Viewers: {viewers}</div>
-        <div>Player Ready: {playerReady ? "Sim" : "Não"}</div>
-      </motion.div>
-    )}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.8 }}
+          className="fixed bottom-0 left-0 bg-black text-white p-2 text-xs z-50 max-w-xs"
+        >
+          <div>Tempo atual: {playerRef.current ? playerRef.current.getCurrentTime().toFixed(2) : "-"}</div>
+          <div>Última emissão: {lastEmitTimeRef.current}</div>
+          <div>Queued Time: {queuedPlayerTimeRef.current ?? "-"}</div>
+          <div>Viewers: {viewers}</div>
+          <div>Player Ready: {playerReady ? "Sim" : "Não"}</div>
+          <div>URL: {videoUrl.substring(0, 30)}...</div>
+        </motion.div>
+      )}
     </div>
   );
 }
