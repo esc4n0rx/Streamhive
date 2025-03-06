@@ -14,12 +14,23 @@ interface CreateStreamModalProps {
   onClose: () => void;
 }
 
+interface ContentSuggestion {
+  nome: string;
+  poster: string;
+  categoria: string;
+  subcategoria: 'Filme' | 'Serie';
+  url: string;
+  temporadas?: number;
+  episodios?: { season: number; episode: number; url: string }[];
+}
+
 export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
   const router = useRouter();
   const [streamType, setStreamType] = useState('youtube');
   const [isLoading, setIsLoading] = useState(false);
   const [streamTitle, setStreamTitle] = useState('');
-  const [streamSource, setStreamSource] = useState('');
+  // Para sugestões, armazenamos um objeto com nome e url
+  const [streamSource, setStreamSource] = useState<{ name: string; url: string } | string>('');
   const [streamDescription, setStreamDescription] = useState('');
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
 
@@ -28,6 +39,8 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
     setIsLoading(true);
     const token = localStorage.getItem('token');
     try {
+      // Se streamSource for objeto, use sua url; senão, use o valor diretamente.
+      const videoUrl = typeof streamSource === 'object' ? streamSource.url : streamSource;
       const response = await fetch('https://backend-streamhive.onrender.com/api/streams/create', {
         method: 'POST',
         headers: {
@@ -38,7 +51,7 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
           title: streamTitle,
           description: streamDescription,
           isPublic: true,
-          videoUrl: streamSource
+          videoUrl: videoUrl
         })
       });
       const data = await response.json();
@@ -61,7 +74,6 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
 
   return (
     <>
-
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -134,7 +146,9 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
                   <div>
                     {streamSource ? (
                       <div className="p-3 border rounded-md">
-                        <p className="font-semibold">{streamSource}</p>
+                        <p className="font-semibold">
+                          {typeof streamSource === 'object' ? streamSource.name : streamSource}
+                        </p>
                         <Button variant="outline" className="mt-2" onClick={() => setIsSubModalOpen(true)}>
                           Alterar Seleção
                         </Button>
@@ -150,7 +164,7 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
                     id="streamSource"
                     placeholder={streamType === 'youtube' ? 'https://youtube.com/watch?v=...' : 'https://...'}
                     required
-                    value={streamSource}
+                    value={typeof streamSource === 'string' ? streamSource : (streamSource?.name || '')}
                     onChange={(e) => setStreamSource(e.target.value)}
                   />
                 )}
@@ -181,8 +195,8 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
 
       {isSubModalOpen && (
         <ContentSuggestionSubModal 
-          onSelectContent={(contentUrl) => {
-            setStreamSource(contentUrl);
+          onSelectContent={(suggestion: { name: string, url: string }) => {
+            setStreamSource(suggestion);
             setIsSubModalOpen(false);
           }}
           onClose={() => setIsSubModalOpen(false)}
@@ -192,28 +206,33 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
   );
 }
 
-
-interface ContentItem {
-  nome: string;
-  poster: string;
-  categoria: string;
-  subcategoria: 'Filme' | 'Serie';
-  url: string;
-  temporadas?: number[];
-  episodios?: number[];
-}
-
 interface ContentSuggestionSubModalProps {
-  onSelectContent: (contentUrl: string) => void;
+  onSelectContent: (suggestion: { name: string, url: string }) => void;
   onClose: () => void;
 }
 
+function flattenGroupedContents(grouped: any, type: 'Filme' | 'Serie'): ContentSuggestion[] {
+  const result: ContentSuggestion[] = [];
+  for (const categoria in grouped) {
+    if (type === 'Filme') {
+      grouped[categoria].filmes.forEach((item: any) => {
+        result.push({ ...item, categoria });
+      });
+    } else {
+      grouped[categoria].series.forEach((item: any) => {
+        result.push({ ...item, categoria });
+      });
+    }
+  }
+  return result;
+}
+
 function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggestionSubModalProps) {
-  const [contents, setContents] = useState<ContentItem[]>([]);
+  const [groupedContents, setGroupedContents] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [contentType, setContentType] = useState<'Filme' | 'Serie'>('Filme');
-  const [selectedContent, setSelectedContent] = useState<ContentItem | null>(null);
+  const [selectedContent, setSelectedContent] = useState<ContentSuggestion | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [selectedEpisode, setSelectedEpisode] = useState<number>(1);
 
@@ -223,7 +242,8 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
       try {
         const response = await fetch('https://backend-streamhive.onrender.com/api/contents');
         const data = await response.json();
-        setContents(data.contents || []);
+        // data.contents é o objeto agrupado retornado pelo backend
+        setGroupedContents(data.contents || {});
       } catch (error) {
         console.error('Erro ao buscar conteúdos:', error);
       } finally {
@@ -233,17 +253,17 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
     fetchContents();
   }, []);
 
-  const suggestions = contents
-    .filter(item =>
-      item.subcategoria === contentType &&
-      item.nome.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+  const flattened = groupedContents ? flattenGroupedContents(groupedContents, contentType) : [];
+  const suggestions = flattened
+    .filter(item => item.nome.toLowerCase().includes(searchTerm.toLowerCase()))
     .slice(0, 5);
 
-  const handleSelect = (item: ContentItem) => {
+  const handleSelect = (item: ContentSuggestion) => {
     if (item.subcategoria === 'Filme') {
-      onSelectContent(item.url);
+      // Para filmes, seleciona imediatamente (passando o nome e a url)
+      onSelectContent({ name: item.nome, url: item.url });
     } else if (item.subcategoria === 'Serie') {
+      // Para séries, abre a seleção de temporada e episódio
       setSelectedContent(item);
       setSelectedSeason(1);
       setSelectedEpisode(1);
@@ -252,7 +272,13 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
 
   const confirmSeriesSelection = () => {
     if (selectedContent) {
-      onSelectContent(selectedContent.url);
+      const episodesForSeason = selectedContent.episodios?.filter(ep => ep.season === selectedSeason) || [];
+      const chosenEpisode = episodesForSeason.find(ep => ep.episode === selectedEpisode);
+      if (chosenEpisode) {
+        onSelectContent({ name: selectedContent.nome, url: chosenEpisode.url });
+      } else {
+        onSelectContent({ name: selectedContent.nome, url: selectedContent.url });
+      }
     }
   };
 
@@ -302,6 +328,9 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
                 >
                   <img src={item.poster} alt={item.nome} className="w-full h-32 object-cover rounded-md mb-2" />
                   <p className="text-sm font-semibold text-center">{item.nome}</p>
+                  {item.subcategoria === 'Filme' && (
+                    <p className="text-xs text-center">{item.categoria}</p>
+                  )}
                 </div>
               ))}
               {suggestions.length === 0 && (
@@ -321,7 +350,7 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
                     onChange={(e) => setSelectedSeason(parseInt(e.target.value))}
                     className="border border-border rounded-md p-2"
                   >
-                    {[1, 2, 3, 4, 5].map(season => (
+                    {Array.from(new Set(selectedContent.episodios?.map(ep => ep.season))).map(season => (
                       <option key={season} value={season}>
                         {season}
                       </option>
@@ -335,11 +364,14 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
                     onChange={(e) => setSelectedEpisode(parseInt(e.target.value))}
                     className="border border-border rounded-md p-2"
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(episode => (
-                      <option key={episode} value={episode}>
-                        {episode}
-                      </option>
-                    ))}
+                    {selectedContent.episodios
+                      ?.filter(ep => ep.season === selectedSeason)
+                      .map(ep => ep.episode)
+                      .map(episode => (
+                        <option key={episode} value={episode}>
+                          {episode}
+                        </option>
+                      ))}
                   </select>
                 </div>
               </div>
