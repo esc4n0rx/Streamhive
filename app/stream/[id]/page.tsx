@@ -1,4 +1,5 @@
 "use client";
+
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
@@ -16,6 +17,7 @@ import { ShareModal } from "@/components/share-modal";
 import { ArrowLeft, Beef, Heart, Share2, Users, Smile, Send } from "lucide-react";
 import Link from "next/link";
 
+// Importação dinâmica do HLSPlayer (apenas no client-side)
 const HLSPlayer = dynamic(() => import("@/components/HLSPlayer"), { ssr: false });
 
 interface Message {
@@ -69,7 +71,7 @@ export default function StreamPage() {
   const [isHost, setIsHost] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   
-  // Debug flag – defina para true para exibir painel de debug
+  // Debug flag
   const [debug, setDebug] = useState(false);
   
   const playerContainerRef = useRef<HTMLDivElement>(null);
@@ -87,7 +89,7 @@ export default function StreamPage() {
     const isYouTube = url.includes("youtube.com") || url.includes("youtu.be");
     
     if (!isYouTube) {
-      // Se for http, usamos o proxy para evitar mixed content
+      // Se for HTTP, usa o proxy para evitar mixed content
       if (url.startsWith("http://")) {
         console.log("[StreamPage] Aplicando proxy para URL HTTP:", url);
         url = `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(url)}`;
@@ -98,7 +100,14 @@ export default function StreamPage() {
     return url;
   };
 
-  // Conexão com Socket.IO e registro de eventos
+  // Determina o tipo de player a usar com base na URL final
+  // Se a URL decodificada terminar com ".m3u8", é manifesto HLS; senão, assume MP4.
+  const videoUrl = getVideoUrl();
+  const decodedUrl = decodeURIComponent(videoUrl);
+  const isYouTube = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
+  const isHLS = !isYouTube && decodedUrl.toLowerCase().endsWith(".m3u8");
+
+  // Conexão com Socket.IO e demais efeitos (sem alterações)
   useEffect(() => {
     console.log("[Socket] Conectando ao socket...");
     const socket = io("https://backend-streamhive.onrender.com");
@@ -113,7 +122,6 @@ export default function StreamPage() {
     socket.on("chat:new-message", (msg: Message) => {
       console.log("[Socket] Recebida nova mensagem:", msg);
       setMessages((prev) => {
-        // Evita duplicação comparando timestamp e texto
         if (prev.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) {
           return prev;
         }
@@ -138,7 +146,6 @@ export default function StreamPage() {
 
     socket.on("player:update", (data: any) => {
       console.log("[Socket] Recebido player:update:", data);
-      // Sincroniza somente para convidados (não para o host)
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
         if (!playerReady) {
           queuedPlayerTimeRef.current = data.data.time;
@@ -155,18 +162,15 @@ export default function StreamPage() {
 
     socket.on("user:joined", (data: { username: string; roomId: string }) => {
       console.log("[Socket] Novo usuário entrou:", data.username);
-      // Atualizamos a contagem apenas para convidados, pois o host já está no stream
       if (localStorage.getItem("userId") !== stream?.host_id) {
         setViewers((prev) => prev + 1);
       } else {
-        // Se o host recebe o evento, não altera
         setViewers((prev) => prev);
       }
     });
 
     socket.on("user:left", (data: { username: string; roomId: string }) => {
       console.log("[Socket] Usuário saiu:", data.username);
-      // Atualiza a contagem garantindo que não fique negativa
       setViewers((prev) => Math.max(prev - 1, 0));
     });
 
@@ -180,7 +184,6 @@ export default function StreamPage() {
     };
   }, [streamId, stream, playerReady]);
 
-  // Busca detalhes da transmissão e define se o usuário é host
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -200,11 +203,8 @@ export default function StreamPage() {
       .then((data: StreamDetails) => {
         console.log("[StreamPage] Dados da transmissão:", data);
         setStream(data);
-        
-        // Se for host, removemos a duplicidade: exibimos (viewers - 1)
         const initialViewers = data.viewers || 1;
         setViewers(initialViewers);
-        
         const currentUserId = localStorage.getItem("userId");
         setIsHost(currentUserId !== null && currentUserId === data.host_id);
       })
@@ -217,7 +217,6 @@ export default function StreamPage() {
       });
   }, [streamId, router, toast]);
 
-  // Busca as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -237,16 +236,13 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar mensagens:", error));
   }, [streamId]);
 
-  // Limpa reações antigas a cada 2 segundos
   useEffect(() => {
     const interval = setInterval(() => {
       setReactions((prev) => prev.filter((r) => Date.now() - parseInt(r.id) < 2000));
     }, 2000);
-    
     return () => clearInterval(interval);
   }, []);
 
-  // Handler quando o player estiver pronto
   const handlePlayerReady = () => {
     console.log("[StreamPage] Player pronto.");
     setPlayerReady(true);
@@ -259,25 +255,18 @@ export default function StreamPage() {
     }
   };
 
-  // Handler para erros no player
   const handlePlayerError = (error: any) => {
     console.error("[StreamPage] Erro no player:", error);
     setPlayerError("Ocorreu um erro ao reproduzir o vídeo. Tente recarregar a página.");
-    
-    // Tenta reproduzir novamente com proxy se for uma URL HTTP não-YouTube
     if (stream && !stream.videoUrl.includes("youtube.com") && !stream.videoUrl.includes("youtu.be")) {
       if (!stream.videoUrl.startsWith("http://") && !stream.videoUrl.startsWith("https://")) {
         console.log("[StreamPage] Tentando adicionar protocolo HTTP para URL:", stream.videoUrl);
         const newUrl = `http://${stream.videoUrl}`;
-        setStream({
-          ...stream,
-          videoUrl: newUrl
-        });
+        setStream({ ...stream, videoUrl: newUrl });
       }
     }
   };
 
-  // Emite atualizações do player se for o host
   const handleProgress = (state: { playedSeconds: number }) => {
     if (isHost && socketRef.current) {
       const now = Date.now();
@@ -297,7 +286,6 @@ export default function StreamPage() {
     }
   };
 
-  // Envia mensagem – o socket deve emitir a mensagem para evitar duplicação
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -317,7 +305,6 @@ export default function StreamPage() {
       .then((res) => res.json())
       .then((data) => {
         console.log("[StreamPage] Mensagem enviada:", data);
-        // Não adicionamos localmente; o socket emitirá a mensagem
         setNewMessage("");
       })
       .catch((error) => console.error("Erro ao enviar mensagem:", error));
@@ -389,35 +376,19 @@ export default function StreamPage() {
     console.log("[StreamPage] Link copiado:", link);
   };
 
-  // Função para tentar novamente em caso de erro
   const handleRetryVideo = () => {
     if (!stream) return;
     
     console.log("[StreamPage] Tentando reproduzir novamente o vídeo");
     setPlayerError(null);
-
-    // Criar uma cópia para forçar re-renderização
-    setStream({...stream});
+    setStream({ ...stream });
   };
 
-  // Define qual player usar: YouTube ou HLS
-  const isYouTube = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
-  
-  // Para conteúdo não-YouTube, prepara a URL apropriadamente
-  const videoUrl = getVideoUrl();
-  
-  // Ajuste na contagem de participantes para exibir corretamente
-  // Se for host, subtrai 1 para não contar duplicadamente
-  const displayedViewers = isHost ? Math.max(viewers - 1, 0) : viewers;
+  // Determina se o vídeo é HLS ou MP4 com base na URL decodificada
+  const decodedVideoUrl = decodeURIComponent(videoUrl);
+  const isHLS = !isYouTube && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
-  // Log de depuração para a URL do vídeo
-  useEffect(() => {
-    if (stream) {
-      console.log("[StreamPage] URL da transmissão:", stream.videoUrl);
-      console.log("[StreamPage] É YouTube?", isYouTube);
-      console.log("[StreamPage] URL final para o player:", videoUrl);
-    }
-  }, [stream, isYouTube, videoUrl]);
+  console.log("[StreamPage] isYouTube:", isYouTube, "isHLS:", isHLS);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -471,13 +442,28 @@ export default function StreamPage() {
               onProgress={handleProgress}
               onError={handlePlayerError}
             />
-          ) : (
+          ) : isHLS ? (
             <HLSPlayer
               url={videoUrl}
               playing={isPlaying}
               volume={volume}
               muted={isMuted}
               controls
+            />
+          ) : (
+            // Se não for HLS (por exemplo, MP4), usa ReactPlayer para reproduzir o vídeo
+            <ReactPlayer
+              ref={playerRef}
+              url={videoUrl}
+              width="100%"
+              height="100%"
+              playing={isPlaying}
+              volume={volume}
+              muted={isMuted}
+              controls
+              onReady={handlePlayerReady}
+              onProgress={handleProgress}
+              onError={handlePlayerError}
             />
           )}
           <AnimatePresence>
@@ -623,6 +609,7 @@ export default function StreamPage() {
                         <p>URL original: {stream?.videoUrl}</p>
                         <p>URL do player: {videoUrl}</p>
                         <p>É YouTube: {isYouTube ? "Sim" : "Não"}</p>
+                        <p>É HLS: {isHLS ? "Sim" : "Não"}</p>
                       </div>
                     </div>
                   </>

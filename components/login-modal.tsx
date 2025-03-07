@@ -28,7 +28,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
   const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
 
-  // Função para salvar token e dados do usuário no localStorage
   const storeUserData = (data: any) => {
     if (data.token) {
       localStorage.setItem('token', data.token);
@@ -55,7 +54,6 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
         setIsLoading(false);
         return;
       }
-      // Salva token e informações do usuário
       storeUserData(data);
       setIsLoading(false);
       setShowInstallModal(true);
