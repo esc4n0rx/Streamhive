@@ -240,9 +240,8 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
     async function fetchContents() {
       setLoading(true);
       try {
-        const response = await fetch('https://backend-streamhive.onrender.com/api/contents');
+        const response = await fetch('https://streamhivex.vercel.app/api/contents');
         const data = await response.json();
-        // data.contents é o objeto agrupado retornado pelo backend
         setGroupedContents(data.contents || {});
       } catch (error) {
         console.error('Erro ao buscar conteúdos:', error);
