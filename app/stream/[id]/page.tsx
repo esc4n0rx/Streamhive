@@ -17,7 +17,6 @@ import { ShareModal } from "@/components/share-modal";
 import { ArrowLeft, Beef, Heart, Share2, Users, Smile, Send } from "lucide-react";
 import Link from "next/link";
 
-// Importação dinâmica do HLSPlayer (apenas no client-side)
 const HLSPlayer = dynamic(() => import("@/components/HLSPlayer"), { ssr: false });
 
 interface Message {
@@ -66,14 +65,13 @@ export default function StreamPage() {
   const [newMessage, setNewMessage] = useState("");
   const [viewers, setViewers] = useState<number>(1);
   const [showShareModal, setShowShareModal] = useState(false);
+  const displayedViewers = viewers;
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
-  
-  // Debug flag
   const [debug, setDebug] = useState(false);
-  
+
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
   const socketRef = useRef<any>(null);
@@ -82,13 +80,13 @@ export default function StreamPage() {
   const [playerReady, setPlayerReady] = useState(false);
 
   // Função para determinar a URL do vídeo (aplicando proxy se necessário)
-  const getVideoUrl = () => {
+  const getVideoUrl = (): string => {
     if (!stream) return "";
     
     let url = stream.videoUrl;
-    const isYouTube = url.includes("youtube.com") || url.includes("youtu.be");
+    const isYT = url.includes("youtube.com") || url.includes("youtu.be");
     
-    if (!isYouTube) {
+    if (!isYT) {
       // Se for HTTP, usa o proxy para evitar mixed content
       if (url.startsWith("http://")) {
         console.log("[StreamPage] Aplicando proxy para URL HTTP:", url);
@@ -100,14 +98,15 @@ export default function StreamPage() {
     return url;
   };
 
-  // Determina o tipo de player a usar com base na URL final
-  // Se a URL decodificada terminar com ".m3u8", é manifesto HLS; senão, assume MP4.
   const videoUrl = getVideoUrl();
-  const decodedUrl = decodeURIComponent(videoUrl);
-  const isYouTube = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
-  const isHLS = !isYouTube && decodedUrl.toLowerCase().endsWith(".m3u8");
+  const decodedVideoUrl = decodeURIComponent(videoUrl);
+  const isYT = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
+  // Renomeamos para videoIsHLS para evitar duplicidade de declaração
+  const videoIsHLS = !isYT && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
-  // Conexão com Socket.IO e demais efeitos (sem alterações)
+  console.log("[StreamPage] isYouTube:", isYT, "videoIsHLS:", videoIsHLS);
+
+  // Socket.IO e demais efeitos (sem alterações)
   useEffect(() => {
     console.log("[Socket] Conectando ao socket...");
     const socket = io("https://backend-streamhive.onrender.com");
@@ -384,11 +383,8 @@ export default function StreamPage() {
     setStream({ ...stream });
   };
 
-  // Determina se o vídeo é HLS ou MP4 com base na URL decodificada
-  const decodedVideoUrl = decodeURIComponent(videoUrl);
-  const isHLS = !isYouTube && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
-  console.log("[StreamPage] isYouTube:", isYouTube, "isHLS:", isHLS);
+  console.log("[StreamPage] isYouTube:", isYT, "videoIsHLS:", videoIsHLS);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -427,7 +423,7 @@ export default function StreamPage() {
               <p className="text-white mb-4">{playerError}</p>
               <Button onClick={handleRetryVideo}>Tentar novamente</Button>
             </div>
-          ) : isYouTube ? (
+          ) : isYT ? (
             <ReactPlayer
               ref={playerRef}
               url={stream?.videoUrl || ""}
@@ -442,7 +438,7 @@ export default function StreamPage() {
               onProgress={handleProgress}
               onError={handlePlayerError}
             />
-          ) : isHLS ? (
+          ) : videoIsHLS ? (
             <HLSPlayer
               url={videoUrl}
               playing={isPlaying}
@@ -451,7 +447,6 @@ export default function StreamPage() {
               controls
             />
           ) : (
-            // Se não for HLS (por exemplo, MP4), usa ReactPlayer para reproduzir o vídeo
             <ReactPlayer
               ref={playerRef}
               url={videoUrl}
@@ -608,8 +603,8 @@ export default function StreamPage() {
                       <div className="mt-2 space-y-1 text-xs">
                         <p>URL original: {stream?.videoUrl}</p>
                         <p>URL do player: {videoUrl}</p>
-                        <p>É YouTube: {isYouTube ? "Sim" : "Não"}</p>
-                        <p>É HLS: {isHLS ? "Sim" : "Não"}</p>
+                        <p>É YouTube: {isYT ? "Sim" : "Não"}</p>
+                        <p>É HLS: {videoIsHLS ? "Sim" : "Não"}</p>
                       </div>
                     </div>
                   </>
