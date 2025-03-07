@@ -31,11 +31,11 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const storeUserData = (data: any) => {
     if (data.token) {
       localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.id);
+      console.log(data.id);
     }
     if (data.user) {
-      localStorage.setItem('userId', data.user.id);
-      localStorage.setItem('userEmail', data.user.email);
-      localStorage.setItem('userName', data.user.name);
+      localStorage.setItem('userId', data.id);
     }
   };
 

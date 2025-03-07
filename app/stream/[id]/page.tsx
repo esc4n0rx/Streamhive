@@ -153,6 +153,12 @@ export default function StreamPage() {
     onPlayerUpdate: (data: any) => {
       console.log("[StreamPage] Evento player:update recebido:", data);
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
+        if (data.data.state === "paused") {
+          setIsPlaying(false);
+        } else if (data.data.state === "playing") {
+          setIsPlaying(true);
+        }
+    
         if (!playerReady) {
           queuedPlayerTimeRef.current = data.data.time;
           return;
@@ -164,24 +170,21 @@ export default function StreamPage() {
         }
       }
     },
-    // Evento de novo usuário na sala
+    
     onUserJoined: (data: { username: string; roomId: string }) => {
       console.log("[Socket] Novo usuário entrou:", data.username);
       if (localStorage.getItem("userId") !== stream?.host_id) {
         setViewers((prev) => prev + 1);
       }
     },
-    // Evento de usuário saindo da sala
+
     onUserLeft: (data: { username: string; roomId: string }) => {
       console.log("[Socket] Usuário saiu:", data.username);
       setViewers((prev) => Math.max(prev - 1, 0));
     },
   });
 
-  // A função que o host usará para iniciar a reprodução sincronizada
-  // Em vez de chamar handleStartStream, o host chamará startPlayback, que envia o evento "player:play"
   const handleStartStream = () => {
-    // Para o host, dispara o evento de início via hook (envia "player:play")
     if (isHost) {
       startPlayback(0);
     } else {
@@ -191,7 +194,6 @@ export default function StreamPage() {
     }
   };
 
-  // Busca os detalhes da transmissão
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -225,7 +227,6 @@ export default function StreamPage() {
       });
   }, [streamId, router, toast]);
 
-  // Busca as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;

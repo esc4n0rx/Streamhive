@@ -29,7 +29,6 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
   const [streamType, setStreamType] = useState('youtube');
   const [isLoading, setIsLoading] = useState(false);
   const [streamTitle, setStreamTitle] = useState('');
-  // Para sugestões, armazenamos um objeto com nome e url
   const [streamSource, setStreamSource] = useState<{ name: string; url: string } | string>('');
   const [streamDescription, setStreamDescription] = useState('');
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
