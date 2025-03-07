@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
-import csv from 'csv-parser';
-import iconv from 'iconv-lite';
 
 type ContentRow = {
   id: string;
@@ -44,104 +42,14 @@ type AggregatedData = {
   contents: GroupedContents;
 };
 
-
 let cachedData: AggregatedData | null = null;
 let cacheExpires = 0;
 
-async function readAndGroupCsv(): Promise<AggregatedData> {
-  return new Promise((resolve, reject) => {
-    const filePath = path.join(process.cwd(), 'lib', 'stream.csv');
-
-    const grouped: { [categoria: string]: { series: { [baseName: string]: Serie }, filmes: ContentRow[] } } = {};
-    let totalRegistros = 0;
-
-    fs.createReadStream(filePath)
-
-      .pipe(iconv.decodeStream('latin1'))
-      .pipe(csv())
-      .on('data', (row: any) => {
-        totalRegistros++;
-
-        const contentRow: ContentRow = {
-          id: row.id,
-          nome: row.nome,
-          poster: row.poster,
-          categoria: row.categoria,
-          subcategoria: row.subcategoria,
-          url: row.url,
-          temporadas: row.temporadas,
-          episodios: row.episodios,
-          criado_em: row.criado_em,
-        };
-
-        const categoria = contentRow.categoria || 'Sem Categoria';
-        if (!grouped[categoria]) {
-          grouped[categoria] = { series: {}, filmes: [] };
-        }
-
-        if (contentRow.subcategoria === 'Serie') {
-          const baseName = contentRow.nome.replace(/\s+S\d+E\d+$/i, '').trim();
-          if (!grouped[categoria].series[baseName]) {
-            grouped[categoria].series[baseName] = {
-              nome: baseName,
-              url: contentRow.url, 
-              temporadas: contentRow.temporadas,
-              episodios: [],
-            };
-          }
-
-          const match = contentRow.nome.match(/S(\d+)E(\d+)$/i);
-          if (match) {
-            const season = parseInt(match[1], 10);
-            const episode = parseInt(match[2], 10);
-            grouped[categoria].series[baseName].episodios.push({
-              season,
-              episode,
-              url: contentRow.url,
-            });
-          } else {
-            grouped[categoria].series[baseName].episodios.push({
-              season: contentRow.temporadas ? parseInt(contentRow.temporadas, 10) : null,
-              episode: contentRow.episodios ? parseInt(contentRow.episodios, 10) : null,
-              url: contentRow.url,
-            });
-          }
-        } else {
-          grouped[categoria].filmes.push(contentRow);
-        }
-      })
-      .on('end', () => {
-        let totalGerado = 0;
-        const finalGrouped: GroupedContents = {};
-
-        for (const categoria in grouped) {
-          const filmesCount = grouped[categoria].filmes.length;
-          let seriesEpisodesCount = 0;
-          const seriesArray: Serie[] = [];
-          for (const baseName in grouped[categoria].series) {
-            const serie = grouped[categoria].series[baseName];
-            seriesEpisodesCount += serie.episodios.length;
-            seriesArray.push(serie);
-          }
-          totalGerado += filmesCount + seriesEpisodesCount;
-          finalGrouped[categoria] = {
-            filmes: grouped[categoria].filmes,
-            series: seriesArray,
-          };
-        }
-
-        const aggregatedData: AggregatedData = {
-          totalRegistros,
-          totalGerado,
-          contents: finalGrouped,
-        };
-
-        resolve(aggregatedData);
-      })
-      .on('error', (error: any) => {
-        reject(error);
-      });
-  });
+async function readOutputJson(): Promise<AggregatedData> {
+  const filePath = path.join(process.cwd(), 'lib', 'output.json');
+  const fileData = await fs.promises.readFile(filePath, 'utf8');
+  const jsonData = JSON.parse(fileData);
+  return jsonData as AggregatedData;
 }
 
 export async function GET() {
@@ -151,13 +59,13 @@ export async function GET() {
       return NextResponse.json(cachedData);
     }
 
-    const aggregatedData = await readAndGroupCsv();
+    const aggregatedData = await readOutputJson();
     cachedData = aggregatedData;
-    cacheExpires = now + 3600000; 
+    cacheExpires = now + 3600000;
 
     return NextResponse.json(aggregatedData);
   } catch (error) {
-    console.error('Erro ao processar o CSV:', error);
+    console.error('Erro ao ler o JSON:', error);
     return NextResponse.json(
       { error: 'Erro interno do servidor.' },
       { status: 500 }
