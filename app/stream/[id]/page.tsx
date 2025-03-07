@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useParams, useRouter } from "next/navigation";
 import ReactPlayer from "react-player";
 import dynamic from "next/dynamic";
-import io from "socket.io-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -17,7 +16,12 @@ import { ShareModal } from "@/components/share-modal";
 import { ArrowLeft, Beef, Heart, Share2, Users, Smile, Send } from "lucide-react";
 import Link from "next/link";
 
+// Importa o HLSPlayer dinamicamente
 const HLSPlayer = dynamic(() => import("@/components/HLSPlayer"), { ssr: false });
+
+// Importa o hook customizado que centraliza a conexão e os eventos do socket.
+// Esse hook deve ser implementado em "hooks/useRoomSocket.ts" conforme discutido.
+import { useRoomSocket } from "@/hooks/useRoomSocket";
 
 interface Message {
   id: string;
@@ -55,6 +59,7 @@ export default function StreamPage() {
     return <div>Stream não encontrado</div>;
   }
 
+  // Estados para dados da transmissão, reprodução, chat, reações, debug e overlay
   const [stream, setStream] = useState<StreamDetails | null>(null);
   const [forceShowDebug, setForceShowDebug] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -72,13 +77,14 @@ export default function StreamPage() {
   const [debug, setDebug] = useState(false);
   const [showWaitingOverlay, setShowWaitingOverlay] = useState(true);
 
+  // Refs para o container do player, para o ReactPlayer e para variáveis de sincronização
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
-  const socketRef = useRef<any>(null);
   const lastEmitTimeRef = useRef<number>(0);
   const queuedPlayerTimeRef = useRef<number | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
 
+  // Função que monta a URL do vídeo (aplicando proxy quando necessário)
   const getVideoUrl = (): string => {
     if (!stream) return "";
     
@@ -103,23 +109,24 @@ export default function StreamPage() {
 
   console.log("[StreamPage] isYouTube:", isYT, "videoIsHLS:", videoIsHLS);
 
-  const handleStartStream = () => {
-    setShowWaitingOverlay(false);
-    setIsPlaying(true);
+  // Callback para quando o evento "player:start" for recebido via socket
+  // Essa é a nova feature que sincroniza o início do player para todos
+  const handlePlayerStart = (data: { time: number; startAt: number }) => {
+    const delay = data.startAt - Date.now();
+    console.log("[StreamPage] Evento player:start recebido. Dados:", data, "Delay:", delay);
+    setTimeout(() => {
+      if (playerRef.current) {
+        playerRef.current.seekTo(data.time, "seconds");
+        setIsPlaying(true);
+        setShowWaitingOverlay(false);
+      }
+    }, delay > 0 ? delay : 0);
   };
 
-  useEffect(() => {
-    console.log("[Socket] Conectando ao socket...");
-    const socket = io("https://backend-streamhive.onrender.com");
-    socketRef.current = socket;
-
-    socket.on("connect", () => {
-      console.log("[Socket] Conectado:", socket.id);
-      socket.emit("join-room", streamId);
-      console.log("[Socket] Emitido 'join-room' para", streamId);
-    });
-
-    socket.on("chat:new-message", (msg: Message) => {
+  // Integração com o hook customizado de socket, passando os callbacks para os eventos
+  const { startPlayback, socket } = useRoomSocket(streamId, isHost, {
+    // Chat: adiciona nova mensagem
+    onChatMessage: (msg: Message) => {
       console.log("[Socket] Recebida nova mensagem:", msg);
       setMessages((prev) => {
         if (prev.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) {
@@ -127,12 +134,11 @@ export default function StreamPage() {
         }
         return [...prev, msg];
       });
-    });
-
-    socket.on("reaction:sent", (data: { emoji: string; user: string; roomId?: string }) => {
+    },
+    // Reações: calcula a posição da reação e atualiza o estado
+    onReaction: (data: { emoji: string; user: string; roomId?: string }) => {
       console.log("[Socket] Recebida reação:", data);
       if (!playerContainerRef.current) return;
-      
       const rect = playerContainerRef.current.getBoundingClientRect();
       const reaction: Reaction = {
         id: Date.now().toString(),
@@ -140,50 +146,52 @@ export default function StreamPage() {
         x: Math.random() * rect.width,
         y: rect.height - 20,
       };
-      
       setReactions((prev) => [...prev, reaction]);
-    });
+    },
 
-    socket.on("player:update", (data: any) => {
-      console.log("[Socket] Recebido player:update:", data);
+    onPlayerStart: handlePlayerStart,
+    onPlayerUpdate: (data: any) => {
+      console.log("[StreamPage] Evento player:update recebido:", data);
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
         if (!playerReady) {
           queuedPlayerTimeRef.current = data.data.time;
           return;
         }
-        
         const currentTime = playerRef.current.getCurrentTime();
         if (Math.abs(currentTime - data.data.time) > 1) {
-          console.log("[Socket] Sincronizando player para o tempo:", data.data.time);
+          console.log("[StreamPage] Sincronizando player para o tempo:", data.data.time);
           playerRef.current.seekTo(data.data.time, "seconds");
         }
       }
-    });
-
-    socket.on("user:joined", (data: { username: string; roomId: string }) => {
+    },
+    // Evento de novo usuário na sala
+    onUserJoined: (data: { username: string; roomId: string }) => {
       console.log("[Socket] Novo usuário entrou:", data.username);
       if (localStorage.getItem("userId") !== stream?.host_id) {
         setViewers((prev) => prev + 1);
-      } else {
-        setViewers((prev) => prev);
       }
-    });
-
-    socket.on("user:left", (data: { username: string; roomId: string }) => {
+    },
+    // Evento de usuário saindo da sala
+    onUserLeft: (data: { username: string; roomId: string }) => {
       console.log("[Socket] Usuário saiu:", data.username);
       setViewers((prev) => Math.max(prev - 1, 0));
-    });
+    },
+  });
 
-    socket.on("disconnect", () => {
-      console.log("[Socket] Desconectado:", socket.id);
-    });
+  // A função que o host usará para iniciar a reprodução sincronizada
+  // Em vez de chamar handleStartStream, o host chamará startPlayback, que envia o evento "player:play"
+  const handleStartStream = () => {
+    // Para o host, dispara o evento de início via hook (envia "player:play")
+    if (isHost) {
+      startPlayback(0);
+    } else {
+      // Caso seja convidado (em geral, não haverá botão de play para eles)
+      setShowWaitingOverlay(false);
+      setIsPlaying(true);
+    }
+  };
 
-    return () => {
-      console.log("[Socket] Desconectando...");
-      socket.disconnect();
-    };
-  }, [streamId, stream, playerReady]);
-
+  // Busca os detalhes da transmissão
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -217,6 +225,7 @@ export default function StreamPage() {
       });
   }, [streamId, router, toast]);
 
+  // Busca as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -236,6 +245,7 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar mensagens:", error));
   }, [streamId]);
 
+  // Limpeza periódica das reações para remover as que já expiraram (menos de 2s)
   useEffect(() => {
     const interval = setInterval(() => {
       setReactions((prev) => prev.filter((r) => Date.now() - parseInt(r.id) < 2000));
@@ -243,6 +253,7 @@ export default function StreamPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Handler para quando o player estiver pronto – aplica sincronização pendente se houver
   const handlePlayerReady = () => {
     console.log("[StreamPage] Player pronto.");
     setPlayerReady(true);
@@ -255,6 +266,7 @@ export default function StreamPage() {
     }
   };
 
+  // Handler para erros do player
   const handlePlayerError = (error: any) => {
     console.error("[StreamPage] Erro no player:", error);
     setPlayerError("Ocorreu um erro ao reproduzir o vídeo. Tente recarregar a página.");
@@ -267,13 +279,14 @@ export default function StreamPage() {
     }
   };
 
+  // Handler para atualização contínua do player (sincronização via "player:update")
   const handleProgress = (state: { playedSeconds: number }) => {
-    if (isHost && socketRef.current) {
+    if (isHost && socket) {
       const now = Date.now();
       if (now - lastEmitTimeRef.current > 1000) {
         lastEmitTimeRef.current = now;
         console.log("[StreamPage] Host emitindo player:update com tempo:", state.playedSeconds);
-        socketRef.current.emit("player:update", {
+        socket.emit("player:update", {
           roomId: streamId,
           data: {
             time: state.playedSeconds,
@@ -286,6 +299,7 @@ export default function StreamPage() {
     }
   };
 
+  // Envio de mensagens do chat
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -310,14 +324,16 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao enviar mensagem:", error));
   };
 
+  // Alterna a exibição do picker de reações
   const toggleReactionPicker = () => {
     setShowReactionPicker((prev) => !prev);
   };
 
+  // Envia a reação (via socket) e calcula posição para animação
   const handleReaction = (emoji: string) => {
     console.log("[StreamPage] Enviando reação:", emoji);
-    if (socketRef.current) {
-      socketRef.current.emit("reaction:sent", { roomId: streamId, emoji });
+    if (socket) {
+      socket.emit("reaction:sent", { roomId: streamId, emoji });
     }
     
     if (!playerContainerRef.current) return;
@@ -333,6 +349,7 @@ export default function StreamPage() {
     setShowReactionPicker(false);
   };
 
+  // Deleta a transmissão
   const handleDeleteStream = async () => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -361,11 +378,13 @@ export default function StreamPage() {
     }
   };
 
+  // Abre o modal de compartilhamento
   const handleShare = () => {
     console.log("[StreamPage] Abrindo modal de compartilhamento");
     setShowShareModal(true);
   };
 
+  // Copia o link da transmissão para a área de transferência
   const handleCopyLink = () => {
     const link = `https://streamhivex.vercel.app/stream/${streamId}`;
     navigator.clipboard.writeText(link);
@@ -376,6 +395,7 @@ export default function StreamPage() {
     console.log("[StreamPage] Link copiado:", link);
   };
 
+  // Tenta reproduzir o vídeo novamente em caso de erro
   const handleRetryVideo = () => {
     if (!stream) return;
     
@@ -383,8 +403,6 @@ export default function StreamPage() {
     setPlayerError(null);
     setStream({ ...stream });
   };
-
-  console.log("[StreamPage] isYouTube:", isYT, "videoIsHLS:", videoIsHLS);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -462,7 +480,7 @@ export default function StreamPage() {
             />
           )}
 
-          {/* Interface de espera sobre o player */}
+          {/* Interface de espera (overlay) sobre o player */}
           <AnimatePresence>
             {showWaitingOverlay && (
               <motion.div
@@ -472,20 +490,29 @@ export default function StreamPage() {
                 className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75 z-20"
               >
                 <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-center">
-                  <p className="text-white text-2xl mb-4">Seu conteúdo está pronto para começar.</p>
-                  <div className="flex justify-center space-x-4">
-                    <Button onClick={handleStartStream} className="bg-green-500 hover:bg-green-600 text-white">
-                      Assistir Agora
-                    </Button>
-                    <Button onClick={handleDeleteStream} className="bg-red-500 hover:bg-red-600 text-white">
-                      Excluir Sala
-                    </Button>
-                  </div>
+                  {isHost ? (
+                    <>
+                      <p className="text-white text-2xl mb-4">Seu conteúdo está pronto para começar.</p>
+                      <div className="flex justify-center space-x-4">
+                        <Button onClick={handleStartStream} className="bg-green-500 hover:bg-green-600 text-white">
+                          Assistir Agora
+                        </Button>
+                        <Button onClick={handleDeleteStream} className="bg-red-500 hover:bg-red-600 text-white">
+                          Excluir Sala
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-white text-2xl">
+                      Aguardando {stream?.host} iniciar um conteúdo...
+                    </p>
+                  )}
                 </motion.div>
               </motion.div>
             )}
           </AnimatePresence>
 
+          {/* Renderização das reações */}
           <AnimatePresence>
             {reactions.map((reaction) => (
               <motion.div
