@@ -55,10 +55,9 @@ export default function StreamPage() {
     return <div>Stream não encontrado</div>;
   }
 
-  // Estados
   const [stream, setStream] = useState<StreamDetails | null>(null);
   const [forceShowDebug, setForceShowDebug] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -71,6 +70,7 @@ export default function StreamPage() {
   const [isHost, setIsHost] = useState(false);
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
+  const [showWaitingOverlay, setShowWaitingOverlay] = useState(true);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
@@ -79,7 +79,6 @@ export default function StreamPage() {
   const queuedPlayerTimeRef = useRef<number | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
 
-  // Função para determinar a URL do vídeo (aplicando proxy se necessário)
   const getVideoUrl = (): string => {
     if (!stream) return "";
     
@@ -87,7 +86,6 @@ export default function StreamPage() {
     const isYT = url.includes("youtube.com") || url.includes("youtu.be");
     
     if (!isYT) {
-      // Se for HTTP, usa o proxy para evitar mixed content
       if (url.startsWith("http://")) {
         console.log("[StreamPage] Aplicando proxy para URL HTTP:", url);
         url = `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(url)}`;
@@ -101,12 +99,15 @@ export default function StreamPage() {
   const videoUrl = getVideoUrl();
   const decodedVideoUrl = decodeURIComponent(videoUrl);
   const isYT = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
-  // Renomeamos para videoIsHLS para evitar duplicidade de declaração
   const videoIsHLS = !isYT && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
   console.log("[StreamPage] isYouTube:", isYT, "videoIsHLS:", videoIsHLS);
 
-  // Socket.IO e demais efeitos (sem alterações)
+  const handleStartStream = () => {
+    setShowWaitingOverlay(false);
+    setIsPlaying(true);
+  };
+
   useEffect(() => {
     console.log("[Socket] Conectando ao socket...");
     const socket = io("https://backend-streamhive.onrender.com");
@@ -383,7 +384,6 @@ export default function StreamPage() {
     setStream({ ...stream });
   };
 
-
   console.log("[StreamPage] isYouTube:", isYT, "videoIsHLS:", videoIsHLS);
 
   return (
@@ -461,6 +461,31 @@ export default function StreamPage() {
               onError={handlePlayerError}
             />
           )}
+
+          {/* Interface de espera sobre o player */}
+          <AnimatePresence>
+            {showWaitingOverlay && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75 z-20"
+              >
+                <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-center">
+                  <p className="text-white text-2xl mb-4">Seu conteúdo está pronto para começar.</p>
+                  <div className="flex justify-center space-x-4">
+                    <Button onClick={handleStartStream} className="bg-green-500 hover:bg-green-600 text-white">
+                      Assistir Agora
+                    </Button>
+                    <Button onClick={handleDeleteStream} className="bg-red-500 hover:bg-red-600 text-white">
+                      Excluir Sala
+                    </Button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <AnimatePresence>
             {reactions.map((reaction) => (
               <motion.div
