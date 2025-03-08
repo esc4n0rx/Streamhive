@@ -247,7 +247,6 @@ export function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentS
     </div>
   );
 
-  // Efeito de debounce de 300ms para chamar o endpoint de busca sempre que o usuário digitar
   useEffect(() => {
     const timer = setTimeout(() => {
       if (searchTerm.trim() !== '') {
@@ -262,7 +261,6 @@ export function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentS
           })
           .finally(() => setLoading(false));
       } else {
-        // Se o campo estiver vazio, limpa as sugestões
         setSuggestions({ filmes: [], series: [] });
       }
     }, 300);
@@ -270,8 +268,7 @@ export function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentS
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Seleciona as sugestões conforme o tipo (Filme ou Série)
-  const flattened = contentType === 'Filme' ? suggestions.filmes : suggestions.series;
+  const flattened = (contentType === 'Filme' ? suggestions.filmes : suggestions.series) || [];
 
   const handleSelect = (item: ContentSuggestion) => {
     if (item.subcategoria === 'Filme') {
