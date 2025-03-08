@@ -20,15 +20,16 @@ interface ContentSuggestion {
   categoria: string;
   subcategoria: 'Filme' | 'Serie';
   url: string;
-  temporadas?: number;
-  episodios?: { season: number; episode: number; url: string }[];
+  // As temporadas são definidas como um objeto com chaves do tipo string para facilitar o acesso
+  temporadas?: { [season: string]: { episodio: number; url: string }[] };
 }
 
 export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
   const router = useRouter();
-  const [streamType, setStreamType] = useState('youtube');
+  const [streamType, setStreamType] = useState<'youtube' | 'url' | 'suggestion'>('youtube');
   const [isLoading, setIsLoading] = useState(false);
   const [streamTitle, setStreamTitle] = useState('');
+  // Pode ser string ou objeto contendo name e url (para conteúdos selecionados)
   const [streamSource, setStreamSource] = useState<{ name: string; url: string } | string>('');
   const [streamDescription, setStreamDescription] = useState('');
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
@@ -38,7 +39,7 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
     setIsLoading(true);
     const token = localStorage.getItem('token');
     try {
-      // Se streamSource for objeto, use sua url; senão, use o valor diretamente.
+      // Se streamSource for objeto, usa sua url; caso contrário, usa o valor diretamente
       const videoUrl = typeof streamSource === 'object' ? streamSource.url : streamSource;
       const response = await fetch('https://backend-streamhive.onrender.com/api/streams/create', {
         method: 'POST',
@@ -106,7 +107,7 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
                 <Label>Tipo de Conteúdo</Label>
                 <RadioGroup
                   value={streamType}
-                  onValueChange={setStreamType}
+                  onValueChange={(value) => setStreamType(value as 'youtube' | 'url' | 'suggestion')}
                   className="grid grid-cols-1 gap-4"
                 >
                   <div className="flex items-center space-x-2 border border-border rounded-md p-3 cursor-pointer hover:bg-accent/50 transition-colors">
@@ -210,24 +211,8 @@ interface ContentSuggestionSubModalProps {
   onClose: () => void;
 }
 
-function flattenGroupedContents(grouped: any, type: 'Filme' | 'Serie'): ContentSuggestion[] {
-  const result: ContentSuggestion[] = [];
-  for (const categoria in grouped) {
-    if (type === 'Filme') {
-      grouped[categoria].filmes.forEach((item: any) => {
-        result.push({ ...item, categoria });
-      });
-    } else {
-      grouped[categoria].series.forEach((item: any) => {
-        result.push({ ...item, categoria });
-      });
-    }
-  }
-  return result;
-}
-
-function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggestionSubModalProps) {
-  const [groupedContents, setGroupedContents] = useState<any>(null);
+export function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggestionSubModalProps) {
+  const [suggestions, setSuggestions] = useState<{ filmes: ContentSuggestion[]; series: ContentSuggestion[] }>({ filmes: [], series: [] });
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [contentType, setContentType] = useState<'Filme' | 'Serie'>('Filme');
@@ -235,33 +220,63 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
   const [selectedEpisode, setSelectedEpisode] = useState<number>(1);
 
-  useEffect(() => {
-    async function fetchContents() {
-      setLoading(true);
-      try {
-        const response = await fetch('https://streamhivex.vercel.app/api/contents');
-        const data = await response.json();
-        setGroupedContents(data.contents || {});
-      } catch (error) {
-        console.error('Erro ao buscar conteúdos:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchContents();
-  }, []);
+  // Componente para exibir as bolinhas animadas enquanto a busca está ocorrendo
+  const LoadingDots = () => (
+    <div className="flex space-x-1">
+      <motion.span
+        className="text-xl"
+        animate={{ opacity: [0.2, 1, 0.2] }}
+        transition={{ duration: 1, repeat: Infinity }}
+      >
+        .
+      </motion.span>
+      <motion.span
+        className="text-xl"
+        animate={{ opacity: [0.2, 1, 0.2] }}
+        transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
+      >
+        .
+      </motion.span>
+      <motion.span
+        className="text-xl"
+        animate={{ opacity: [0.2, 1, 0.2] }}
+        transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
+      >
+        .
+      </motion.span>
+    </div>
+  );
 
-  const flattened = groupedContents ? flattenGroupedContents(groupedContents, contentType) : [];
-  const suggestions = flattened
-    .filter(item => item.nome.toLowerCase().includes(searchTerm.toLowerCase()))
-    .slice(0, 5);
+  // Efeito de debounce de 300ms para chamar o endpoint de busca sempre que o usuário digitar
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchTerm.trim() !== '') {
+        setLoading(true);
+        fetch(`https://streamhivex.vercel.app/api/contents?termo=${encodeURIComponent(searchTerm)}`)
+          .then(response => response.json())
+          .then(data => {
+            setSuggestions(data);
+          })
+          .catch(error => {
+            console.error('Erro ao buscar conteúdos:', error);
+          })
+          .finally(() => setLoading(false));
+      } else {
+        // Se o campo estiver vazio, limpa as sugestões
+        setSuggestions({ filmes: [], series: [] });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Seleciona as sugestões conforme o tipo (Filme ou Série)
+  const flattened = contentType === 'Filme' ? suggestions.filmes : suggestions.series;
 
   const handleSelect = (item: ContentSuggestion) => {
     if (item.subcategoria === 'Filme') {
-      // Para filmes, seleciona imediatamente (passando o nome e a url)
       onSelectContent({ name: item.nome, url: item.url });
     } else if (item.subcategoria === 'Serie') {
-      // Para séries, abre a seleção de temporada e episódio
       setSelectedContent(item);
       setSelectedSeason(1);
       setSelectedEpisode(1);
@@ -270,11 +285,13 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
 
   const confirmSeriesSelection = () => {
     if (selectedContent) {
-      const episodesForSeason = selectedContent.episodios?.filter(ep => ep.season === selectedSeason) || [];
-      const chosenEpisode = episodesForSeason.find(ep => ep.episode === selectedEpisode);
+      // Obtém os episódios da temporada selecionada
+      const episodesForSeason = selectedContent.temporadas ? selectedContent.temporadas[selectedSeason.toString()] || [] : [];
+      const chosenEpisode = episodesForSeason.find(ep => ep.episodio === selectedEpisode);
       if (chosenEpisode) {
         onSelectContent({ name: selectedContent.nome, url: chosenEpisode.url });
       } else {
+        // Caso não encontre, retorna a URL padrão da série
         onSelectContent({ name: selectedContent.nome, url: selectedContent.url });
       }
     }
@@ -314,24 +331,34 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
               <Label>Série</Label>
             </div>
           </div>
-          {loading ? (
-            <p>Carregando conteúdos...</p>
-          ) : (
+          {searchTerm.trim() === '' && (
+            <p className="text-center text-sm text-gray-500 mb-2">
+              Termine de digitar seu conteúdo e vamos buscar automaticamente
+            </p>
+          )}
+          {loading && (
+            <div className="flex flex-col items-center mb-4">
+              <p className="text-center">Buscando seu conteúdo</p>
+              <LoadingDots />
+            </div>
+          )}
+          {!loading && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {suggestions.map((item, index) => (
-                <div
-                  key={index}
-                  className="border border-border rounded-md p-2 cursor-pointer hover:bg-accent/50 transition-colors"
-                  onClick={() => handleSelect(item)}
-                >
-                  <img src={item.poster} alt={item.nome} className="w-full h-32 object-cover rounded-md mb-2" />
-                  <p className="text-sm font-semibold text-center">{item.nome}</p>
-                  {item.subcategoria === 'Filme' && (
-                    <p className="text-xs text-center">{item.categoria}</p>
-                  )}
-                </div>
-              ))}
-              {suggestions.length === 0 && (
+              {flattened.length > 0 ? (
+                flattened.map((item, index) => (
+                  <div
+                    key={index}
+                    className="border border-border rounded-md p-2 cursor-pointer hover:bg-accent/50 transition-colors"
+                    onClick={() => handleSelect(item)}
+                  >
+                    <img src={item.poster} alt={item.nome} className="w-full h-32 object-cover rounded-md mb-2" />
+                    <p className="text-sm font-semibold text-center">{item.nome}</p>
+                    {item.subcategoria === 'Filme' && (
+                      <p className="text-xs text-center">{item.categoria}</p>
+                    )}
+                  </div>
+                ))
+              ) : (
                 <p className="col-span-4 text-center">Nenhum conteúdo encontrado.</p>
               )}
             </div>
@@ -348,7 +375,7 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
                     onChange={(e) => setSelectedSeason(parseInt(e.target.value))}
                     className="border border-border rounded-md p-2"
                   >
-                    {Array.from(new Set(selectedContent.episodios?.map(ep => ep.season))).map(season => (
+                    {selectedContent.temporadas && Object.keys(selectedContent.temporadas).map(season => (
                       <option key={season} value={season}>
                         {season}
                       </option>
@@ -362,12 +389,11 @@ function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentSuggesti
                     onChange={(e) => setSelectedEpisode(parseInt(e.target.value))}
                     className="border border-border rounded-md p-2"
                   >
-                    {selectedContent.episodios
-                      ?.filter(ep => ep.season === selectedSeason)
-                      .map(ep => ep.episode)
-                      .map(episode => (
-                        <option key={episode} value={episode}>
-                          {episode}
+                    {selectedContent.temporadas &&
+                      selectedContent.temporadas[selectedSeason.toString()] &&
+                      selectedContent.temporadas[selectedSeason.toString()].map(ep => (
+                        <option key={ep.episodio} value={ep.episodio}>
+                          {ep.episodio}
                         </option>
                       ))}
                   </select>
