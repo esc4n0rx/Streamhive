@@ -251,12 +251,10 @@ export function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentS
     const timer = setTimeout(() => {
       if (searchTerm.trim() !== '') {
         setLoading(true);
-        fetch(`https://streamhivex.vercel.app/api/contents?termo=${encodeURIComponent(searchTerm)}`)
+        fetch(`https://backend-streamhive.onrender.com/api/contents?termo=${encodeURIComponent(searchTerm)}`)
           .then(response => response.json())
           .then(data => {
-            console.log("Backend response:", data);
             setSuggestions(data);
-            console.log("Suggestions set:", data);
           })
           .catch(error => {
             console.error('Erro ao buscar conteúdos:', error);
@@ -271,7 +269,6 @@ export function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentS
   }, [searchTerm]);
 
   const flattened = (contentType === 'Filme' ? suggestions.filmes : suggestions.series) || [];
-  console.log("Flattened suggestions:", flattened);
 
   const handleSelect = (item: ContentSuggestion) => {
     if (item.subcategoria === 'Filme') {
