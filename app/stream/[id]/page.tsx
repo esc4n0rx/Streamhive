@@ -16,7 +16,6 @@ import { ArrowLeft, Beef, Heart, Share2, Users, Smile, Send } from "lucide-react
 import Link from "next/link";
 
 const HLSPlayer = dynamic(() => import("@/components/HLSPlayer"), { ssr: false });
-
 import { useRoomSocket } from "@/hooks/useRoomSocket";
 
 interface Message {
@@ -57,7 +56,7 @@ export default function StreamPage() {
 
   // Estados principais
   const [stream, setStream] = useState<StreamDetails | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false); // Controla se o player está tocando
+  const [isPlaying, setIsPlaying] = useState(false); // Controle de reprodução
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -71,12 +70,24 @@ export default function StreamPage() {
   const [showWaitingOverlay, setShowWaitingOverlay] = useState(true);
   const [showStreamEndedModal, setShowStreamEndedModal] = useState(false);
 
-  // Refs e variáveis para sincronização
+  // Refs para o player e sincronização
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
   const lastEmitTimeRef = useRef<number>(0);
   const queuedPlayerTimeRef = useRef<number | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
+
+  // Impede que o host saia com o vídeo em reprodução
+  useEffect(() => {
+    if (isHost && isPlaying) {
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+        e.preventDefault();
+        e.returnValue = "";
+      };
+      window.addEventListener("beforeunload", handleBeforeUnload);
+      return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+    }
+  }, [isHost, isPlaying]);
 
   // Função para obter a URL do vídeo
   const getVideoUrl = (): string => {
@@ -94,26 +105,43 @@ export default function StreamPage() {
   const isYT = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
   const videoIsHLS = !isYT && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
-  // Callback chamado quando o host inicia a transmissão
-  const handlePlayerStart = (data: { time: number; startAt: number }) => {
-    const delay = data.startAt - Date.now();
-    console.log("[Player Sync] player:start recebido:", data, "Delay:", delay);
-    setTimeout(() => {
-      if (playerRef.current) {
-        playerRef.current.seekTo(data.time, "seconds");
+  // Callback para o evento de play enviado pelo host.
+  // Para convidados: se o modal de espera estiver ativo, apenas autoriza o play (sem seek);
+  // Se o convidado estiver reentrando (modal já removido), sincroniza (seek) conforme o tempo enviado.
+  const handlePlayerStart = (data: { time: number; startAt?: number }) => {
+    if (!isHost) {
+      if (showWaitingOverlay) {
+        console.log("[Player Sync] Autorização recebida para PLAY (convidado)");
         setIsPlaying(true);
         setShowWaitingOverlay(false);
+      } else {
+        if (data.time > 0 && playerRef.current) {
+          console.log("[Player Sync] Sync (convidado reentrando) para tempo:", data.time);
+          playerRef.current.seekTo(data.time, "seconds");
+        }
+        setIsPlaying(true);
       }
-    }, delay > 0 ? delay : 0);
+    } else {
+      // Para o host, usamos delay se startAt estiver definido
+      const delay = data.startAt ? data.startAt - Date.now() : 0;
+      setTimeout(() => {
+        if (playerRef.current) {
+          playerRef.current.seekTo(data.time, "seconds");
+        }
+        setIsPlaying(true);
+        setShowWaitingOverlay(false);
+      }, delay > 0 ? delay : 0);
+    }
   };
 
-  // Integração com o hook de socket (os callbacks abaixo serão chamados quando os eventos chegarem)
+  // Integração com o hook de socket.
   const { startPlayback, socket } = useRoomSocket(streamId, isHost, {
     onChatMessage: (msg: Message) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) return prev;
-        return [...prev, msg];
-      });
+      setMessages((prev) =>
+        prev.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)
+          ? prev
+          : [...prev, msg]
+      );
     },
     onReaction: (data: { emoji: string; user: string; roomId?: string }) => {
       if (!playerContainerRef.current) return;
@@ -129,7 +157,6 @@ export default function StreamPage() {
     onPlayerStart: handlePlayerStart,
     onPlayerUpdate: (data: any) => {
       console.log("[Player Sync] player:update recebido:", data);
-      // Para convidados, atualizar o estado conforme o evento do host
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
         if (data.data.state === "paused") {
           setIsPlaying(false);
@@ -137,7 +164,8 @@ export default function StreamPage() {
           setIsPlaying(true);
           setShowWaitingOverlay(false);
         }
-        if (!playerReady) {
+        // Se o convidado já não estiver na tela de espera, e houver diferença de tempo, sincroniza.
+        if (!playerReady && data.data.time !== undefined) {
           queuedPlayerTimeRef.current = data.data.time;
           return;
         }
@@ -155,22 +183,22 @@ export default function StreamPage() {
       setViewers((prev) => Math.max(prev - 1, 0));
     },
     onStreamEnded: () => {
-      console.log("[Player Sync] stream:ended recebido");
+      console.log("[Player Sync] Evento stream:ended recebido");
       if (!isHost) {
         setShowStreamEndedModal(true);
         setTimeout(() => router.push("/dashboard"), 5000);
       }
-    }
+    },
   });
 
-  // Apenas o host pode iniciar a transmissão
+  // O host somente pode iniciar a transmissão
   const handleStartStream = () => {
     if (isHost) {
       startPlayback(0);
     }
   };
 
-  // Carregamento dos dados da transmissão
+  // Carrega os detalhes da transmissão
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -195,6 +223,7 @@ export default function StreamPage() {
       });
   }, [streamId, router, toast]);
 
+  // Carrega as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -209,6 +238,7 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar mensagens:", error));
   }, [streamId]);
 
+  // Atualiza as reações (animação)
   useEffect(() => {
     const interval = setInterval(() => {
       setReactions((prev) => prev.filter((r) => Date.now() - parseInt(r.id) < 2000));
@@ -216,7 +246,6 @@ export default function StreamPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Quando o player estiver pronto, para convidados forçamos a pausa
   const handlePlayerReady = () => {
     console.log("[Player Sync] Player pronto.");
     setPlayerReady(true);
@@ -242,7 +271,6 @@ export default function StreamPage() {
     }
   };
 
-  // O host emite atualizações de tempo; o convidado usa os dados para sincronizar
   const handleProgress = (state: { playedSeconds: number }) => {
     if (isHost && socket) {
       const now = Date.now();
@@ -415,7 +443,7 @@ export default function StreamPage() {
             />
           )}
 
-          {/* Overlay que bloqueia interações para convidados */}
+          {/* Overlay para bloquear interações dos convidados */}
           {!isHost && (
             <div className="absolute inset-0 z-30" style={{ background: "rgba(0,0,0,0)", pointerEvents: "all" }}></div>
           )}
