@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/components/ui/use-toast";
 import { ShareModal } from "@/components/share-modal";
 import { ArrowLeft, Beef, Heart, Share2, Users, Smile, Send } from "lucide-react";
@@ -58,7 +57,7 @@ export default function StreamPage() {
 
   const [stream, setStream] = useState<StreamDetails | null>(null);
   const [forceShowDebug, setForceShowDebug] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false); // Estado que controla a reprodução
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -72,7 +71,7 @@ export default function StreamPage() {
   const [playerError, setPlayerError] = useState<string | null>(null);
   const [debug, setDebug] = useState(false);
   const [showWaitingOverlay, setShowWaitingOverlay] = useState(true);
-  const [showStreamEndedModal, setShowStreamEndedModal] = useState(false); // Modal para stream encerrada
+  const [showStreamEndedModal, setShowStreamEndedModal] = useState(false);
 
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
@@ -82,18 +81,11 @@ export default function StreamPage() {
 
   const getVideoUrl = (): string => {
     if (!stream) return "";
-    
     let url = stream.videoUrl;
     const isYT = url.includes("youtube.com") || url.includes("youtu.be");
-    
-    if (!isYT) {
-      if (url.startsWith("http://")) {
-        console.log("[StreamPage] Aplicando proxy para URL HTTP:", url);
-        url = `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(url)}`;
-      }
+    if (!isYT && url.startsWith("http://")) {
+      url = `https://backend-streamhive.onrender.com/api/proxy?url=${encodeURIComponent(url)}`;
     }
-    
-    console.log("[StreamPage] URL final do vídeo:", url);
     return url;
   };
 
@@ -102,12 +94,10 @@ export default function StreamPage() {
   const isYT = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
   const videoIsHLS = !isYT && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
-  console.log("[StreamPage] isYouTube:", isYT, "videoIsHLS:", videoIsHLS);
-
-  // Callback para sincronizar o início do player com o host
+  // Callback de sincronização para o início do player – só remove o overlay e inicia a reprodução quando acionado pelo host.
   const handlePlayerStart = (data: { time: number; startAt: number }) => {
     const delay = data.startAt - Date.now();
-    console.log("[StreamPage] Evento player:start recebido. Dados:", data, "Delay:", delay);
+    console.log("[Player Sync] player:start recebido:", data, "Delay:", delay);
     setTimeout(() => {
       if (playerRef.current) {
         playerRef.current.seekTo(data.time, "seconds");
@@ -117,11 +107,8 @@ export default function StreamPage() {
     }, delay > 0 ? delay : 0);
   };
 
-  // Integração com o hook customizado de socket, com os callbacks necessários
   const { startPlayback, socket } = useRoomSocket(streamId, isHost, {
-    // Chat: adiciona nova mensagem
     onChatMessage: (msg: Message) => {
-      console.log("[Socket] Recebida nova mensagem:", msg);
       setMessages((prev) => {
         if (prev.some((m) => m.timestamp === msg.timestamp && m.text === msg.text)) {
           return prev;
@@ -129,9 +116,8 @@ export default function StreamPage() {
         return [...prev, msg];
       });
     },
-    // Reações: calcula a posição da reação e atualiza o estado
+
     onReaction: (data: { emoji: string; user: string; roomId?: string }) => {
-      console.log("[Socket] Recebida reação:", data);
       if (!playerContainerRef.current) return;
       const rect = playerContainerRef.current.getBoundingClientRect();
       const reaction: Reaction = {
@@ -145,41 +131,41 @@ export default function StreamPage() {
 
     onPlayerStart: handlePlayerStart,
     onPlayerUpdate: (data: any) => {
-      console.log("[StreamPage] Evento player:update recebido:", data);
+      // Apenas logs de sincronização de player
+      console.log("[Player Sync] player:update recebido:", data);
+      // Para convidados, se ainda estiver aguardando o play do host, ignora sinal de "playing"
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
         if (data.data.state === "paused") {
           setIsPlaying(false);
         } else if (data.data.state === "playing") {
-          setIsPlaying(true);
+          if (!showWaitingOverlay) {
+            setIsPlaying(true);
+          } else {
+            setIsPlaying(false);
+          }
         }
-    
         if (!playerReady) {
           queuedPlayerTimeRef.current = data.data.time;
           return;
         }
         const currentTime = playerRef.current.getCurrentTime();
         if (Math.abs(currentTime - data.data.time) > 1) {
-          console.log("[StreamPage] Sincronizando player para o tempo:", data.data.time);
+          console.log("[Player Sync] Sincronizando tempo para:", data.data.time);
           playerRef.current.seekTo(data.data.time, "seconds");
         }
       }
     },
-    
+
     onUserJoined: (data: { username: string; roomId: string }) => {
-      console.log("[Socket] Novo usuário entrou:", data.username);
-      if (localStorage.getItem("userId") !== stream?.host_id) {
-        setViewers((prev) => prev + 1);
-      }
+      setViewers((prev) => prev + 1);
     },
 
     onUserLeft: (data: { username: string; roomId: string }) => {
-      console.log("[Socket] Usuário saiu:", data.username);
       setViewers((prev) => Math.max(prev - 1, 0));
     },
 
-    // Callback para notificar os convidados quando o host encerra a transmissão
     onStreamEnded: () => {
-      console.log("[StreamPage] Evento stream:ended recebido");
+      console.log("[Player Sync] stream:ended recebido");
       if (!isHost) {
         setShowStreamEndedModal(true);
         setTimeout(() => {
@@ -189,7 +175,6 @@ export default function StreamPage() {
     }
   });
 
-  // Apenas o host pode iniciar a transmissão
   const handleStartStream = () => {
     if (isHost) {
       startPlayback(0);
@@ -199,12 +184,9 @@ export default function StreamPage() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
-      console.error("[StreamPage] Token não encontrado, redirecionando para /");
       router.push("/");
       return;
     }
-    
-    console.log("[StreamPage] Buscando detalhes da transmissão...");
     fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}`, {
       headers: {
         "Content-Type": "application/json",
@@ -213,7 +195,6 @@ export default function StreamPage() {
     })
       .then((res) => res.json())
       .then((data: StreamDetails) => {
-        console.log("[StreamPage] Dados da transmissão:", data);
         setStream(data);
         const initialViewers = data.viewers || 1;
         setViewers(initialViewers);
@@ -221,19 +202,13 @@ export default function StreamPage() {
         setIsHost(currentUserId !== null && currentUserId === data.host_id);
       })
       .catch((error) => {
-        console.error("Erro ao buscar transmissão:", error);
-        toast({ 
-          title: "Erro", 
-          description: "Não foi possível carregar os detalhes da transmissão." 
-        });
+        toast({ title: "Erro", description: "Não foi possível carregar os detalhes da transmissão." });
       });
   }, [streamId, router, toast]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-    
-    console.log("[StreamPage] Buscando mensagens do chat...");
     fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}/messages`, {
       headers: {
         "Content-Type": "application/json",
@@ -242,7 +217,6 @@ export default function StreamPage() {
     })
       .then((res) => res.json())
       .then((data: Message[]) => {
-        console.log("[StreamPage] Mensagens recebidas:", data);
         setMessages(data);
       })
       .catch((error) => console.error("Erro ao buscar mensagens:", error));
@@ -256,37 +230,37 @@ export default function StreamPage() {
   }, []);
 
   const handlePlayerReady = () => {
-    console.log("[StreamPage] Player pronto.");
+    console.log("[Player Sync] Player pronto.");
     setPlayerReady(true);
     setPlayerError(null);
-    
+    // Se o usuário for convidado, forçamos o player a ficar pausado
+    if (!isHost) {
+      setIsPlaying(false);
+    }
     if (queuedPlayerTimeRef.current !== null && playerRef.current) {
-      console.log("[StreamPage] Aplicando sincronização em fila com tempo:", queuedPlayerTimeRef.current);
+      console.log("[Player Sync] Aplicando sincronização em fila:", queuedPlayerTimeRef.current);
       playerRef.current.seekTo(queuedPlayerTimeRef.current, "seconds");
       queuedPlayerTimeRef.current = null;
     }
   };
 
-  // Handler para erros do player
   const handlePlayerError = (error: any) => {
-    console.error("[StreamPage] Erro no player:", error);
+    console.error("[Player Sync] Erro no player:", error);
     setPlayerError("Ocorreu um erro ao reproduzir o vídeo. Tente recarregar a página.");
     if (stream && !stream.videoUrl.includes("youtube.com") && !stream.videoUrl.includes("youtu.be")) {
       if (!stream.videoUrl.startsWith("http://") && !stream.videoUrl.startsWith("https://")) {
-        console.log("[StreamPage] Tentando adicionar protocolo HTTP para URL:", stream.videoUrl);
         const newUrl = `http://${stream.videoUrl}`;
         setStream({ ...stream, videoUrl: newUrl });
       }
     }
   };
 
-  // Handler para atualização contínua do player (sincronização via "player:update")
   const handleProgress = (state: { playedSeconds: number }) => {
     if (isHost && socket) {
       const now = Date.now();
       if (now - lastEmitTimeRef.current > 1000) {
         lastEmitTimeRef.current = now;
-        console.log("[StreamPage] Host emitindo player:update com tempo:", state.playedSeconds);
+        console.log("[Player Sync] Host emitindo atualização com tempo:", state.playedSeconds);
         socket.emit("player:update", {
           roomId: streamId,
           data: {
@@ -300,15 +274,11 @@ export default function StreamPage() {
     }
   };
 
-  // Envio de mensagens do chat
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
-    
     const token = localStorage.getItem("token");
     if (!token) return;
-    
-    console.log("[StreamPage] Enviando mensagem:", newMessage);
     fetch(`https://backend-streamhive.onrender.com/api/streams/${streamId}/messages`, {
       method: "POST",
       headers: {
@@ -319,24 +289,19 @@ export default function StreamPage() {
     })
       .then((res) => res.json())
       .then((data) => {
-        console.log("[StreamPage] Mensagem enviada:", data);
         setNewMessage("");
       })
       .catch((error) => console.error("Erro ao enviar mensagem:", error));
   };
 
-  // Alterna a exibição do picker de reações
   const toggleReactionPicker = () => {
     setShowReactionPicker((prev) => !prev);
   };
 
-  // Envia a reação (via socket) e calcula posição para animação
   const handleReaction = (emoji: string) => {
-    console.log("[StreamPage] Enviando reação:", emoji);
     if (socket) {
       socket.emit("reaction:sent", { roomId: streamId, emoji });
     }
-    
     if (!playerContainerRef.current) return;
     const rect = playerContainerRef.current.getBoundingClientRect();
     const reaction: Reaction = {
@@ -345,19 +310,14 @@ export default function StreamPage() {
       x: Math.random() * rect.width,
       y: rect.height - 20,
     };
-    
     setReactions((prev) => [...prev, reaction]);
     setShowReactionPicker(false);
   };
 
-  // Deleta a transmissão
   const handleDeleteStream = async () => {
     const token = localStorage.getItem("token");
     if (!token) return;
-    
     try {
-      console.log("[StreamPage] Deletando transmissão...");
-      // Se for host, emitir evento para notificar os convidados
       if (isHost && socket) {
         socket.emit("stream:ended", { roomId: streamId });
       }
@@ -368,13 +328,11 @@ export default function StreamPage() {
           Authorization: `Bearer ${token}`,
         },
       });
-      
       const data = await res.json();
       if (!res.ok) {
         toast({ title: "Erro", description: data.message || "Erro ao encerrar a transmissão." });
         return;
       }
-      
       toast({ title: "Transmissão encerrada", description: "A transmissão foi encerrada com sucesso." });
       router.push("/dashboard");
     } catch (error) {
@@ -383,13 +341,10 @@ export default function StreamPage() {
     }
   };
 
-  // Abre o modal de compartilhamento
   const handleShare = () => {
-    console.log("[StreamPage] Abrindo modal de compartilhamento");
     setShowShareModal(true);
   };
 
-  // Copia o link da transmissão para a área de transferência
   const handleCopyLink = () => {
     const link = `https://streamhivex.vercel.app/stream/${streamId}`;
     navigator.clipboard.writeText(link);
@@ -397,14 +352,10 @@ export default function StreamPage() {
       title: "Link copiado!",
       description: "O link da transmissão foi copiado para a área de transferência.",
     });
-    console.log("[StreamPage] Link copiado:", link);
   };
 
-  // Tenta reproduzir o vídeo novamente em caso de erro
   const handleRetryVideo = () => {
     if (!stream) return;
-    
-    console.log("[StreamPage] Tentando reproduzir novamente o vídeo");
     setPlayerError(null);
     setStream({ ...stream });
   };
@@ -485,12 +436,11 @@ export default function StreamPage() {
             />
           )}
 
-          {/* Overlay para bloquear interações do player para convidados */}
+          {/* Overlay que bloqueia interações para convidados */}
           {!isHost && (
-            <div className="absolute inset-0 z-30" style={{ background: 'rgba(0,0,0,0)', pointerEvents: 'all' }}></div>
+            <div className="absolute inset-0 z-30" style={{ background: "rgba(0,0,0,0)", pointerEvents: "all" }}></div>
           )}
 
-          {/* Interface de espera (overlay) sobre o player */}
           <AnimatePresence>
             {showWaitingOverlay && (
               <motion.div
@@ -522,7 +472,6 @@ export default function StreamPage() {
             )}
           </AnimatePresence>
 
-          {/* Renderização das reações */}
           <AnimatePresence>
             {reactions.map((reaction) => (
               <motion.div
@@ -678,7 +627,6 @@ export default function StreamPage() {
       </main>
       <ShareModal isOpen={showShareModal} onClose={() => setShowShareModal(false)} streamId={streamId} />
       
-      {/* Modal de transmissão encerrada para convidados */}
       <AnimatePresence>
         {showStreamEndedModal && (
           <motion.div
@@ -687,7 +635,7 @@ export default function StreamPage() {
             exit={{ opacity: 0 }}
             className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-75 z-50"
           >
-            <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="bg-white p-6 rounded shadow-lg text-center">
+            <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="bg-black p-6 rounded shadow-lg text-center">
               <p>Poxa, {stream?.host} encerrou a transmissão. Infelizmente, tenho que te levar de volta.</p>
             </motion.div>
           </motion.div>
