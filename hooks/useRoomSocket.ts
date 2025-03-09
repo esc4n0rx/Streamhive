@@ -27,7 +27,8 @@ export interface RoomSocketCallbacks {
   onReaction?: (data: Reaction) => void;
   onUserJoined?: (data: { username: string; roomId: string }) => void;
   onUserLeft?: (data: { username: string; roomId: string }) => void;
-  onPlayerUpdate?: (data: any) => void; 
+  onPlayerUpdate?: (data: any) => void;
+  onStreamEnded?: () => void; 
 }
 
 export function useRoomSocket(
@@ -45,16 +46,15 @@ export function useRoomSocket(
       console.log("[Socket] Conectado:", socket.id);
       socket.emit("join-room", roomId);
       if (!isHost) {
-      console.log("[Socket] Solicitando sincronização para o novo participante");
-      socket.emit("request:sync", { roomId });
-    }
+        console.log("[Socket] Solicitando sincronização para o novo participante");
+        socket.emit("request:sync", { roomId });
+      }
     });
 
     socket.on("player:sync", (data: PlayerStartData) => {
       console.log("[Socket] Evento player:sync recebido:", data);
       callbacks.onPlayerStart(data);
     });
-      
 
     socket.on("player:start", (data: PlayerStartData) => {
       console.log("[Socket] Evento player:start recebido:", data);
@@ -96,6 +96,15 @@ export function useRoomSocket(
       });
     }
 
+    if (callbacks.onStreamEnded) {
+      socket.on("stream:ended", () => {
+        console.log("[Socket] Evento stream:ended recebido");
+        if (callbacks.onStreamEnded) {
+          callbacks.onStreamEnded();
+        }
+      });
+    }
+
     return () => {
       console.log("[Socket] Desconectando...");
       socket.disconnect();
@@ -104,7 +113,7 @@ export function useRoomSocket(
 
   const startPlayback = (currentTime: number) => {
     if (isHost && socketRef.current) {
-      const startDelay = 300; 
+      const startDelay = 300;
       socketRef.current.emit("player:play", {
         roomId,
         data: {
@@ -120,5 +129,11 @@ export function useRoomSocket(
     }
   };
 
-  return { startPlayback, socket: socketRef.current };
+  const endStream = () => {
+    if (isHost && socketRef.current) {
+      socketRef.current.emit("stream:ended", { roomId });
+    }
+  };
+
+  return { startPlayback, endStream, socket: socketRef.current };
 }
