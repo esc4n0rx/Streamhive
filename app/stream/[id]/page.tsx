@@ -54,7 +54,6 @@ export default function StreamPage() {
     return <div>Stream não encontrado</div>;
   }
 
-  // Estados principais
   const [stream, setStream] = useState<StreamDetails | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -70,23 +69,22 @@ export default function StreamPage() {
   const [showWaitingOverlay, setShowWaitingOverlay] = useState(true);
   const [showStreamEndedModal, setShowStreamEndedModal] = useState(false);
 
-  // Refs para o player e sincronização
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ReactPlayer>(null);
   const lastEmitTimeRef = useRef<number>(0);
   const queuedPlayerTimeRef = useRef<number | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
 
-  // Impede que o host saia com a transmissão ativa
   const handleHostLeave = () => {
     if (isHost && isPlaying) {
-      alert("Você precisa encerrar a transmissão antes de sair.");
+      toast({ title: "Atenção", description: "Você precisa encerrar a transmissão antes de sair." });
+      // alert("Você precisa encerrar a transmissão antes de sair.");
     } else {
       router.push("/dashboard");
     }
   };
 
-  // Função para obter a URL do vídeo
+
   const getVideoUrl = (): string => {
     if (!stream) return "";
     let url = stream.videoUrl;
@@ -102,9 +100,6 @@ export default function StreamPage() {
   const isYTSource = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
   const videoIsHLS = !isYTSource && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
-  // Callback para eventos de play do host.
-  // Se o evento possuir "startAt", trata-se do comando para iniciar a reprodução.
-  // Caso contrário (evento sync) só atualiza o tempo se o convidado já estiver reentrando.
   const handlePlayerStart = (data: { time: number; startAt?: number }) => {
     if (!isHost) {
       if (data.startAt !== undefined) {
@@ -129,7 +124,6 @@ export default function StreamPage() {
     }
   };
 
-  // Integração com o hook de socket
   const { startPlayback, socket } = useRoomSocket(streamId, isHost, {
     onChatMessage: (msg: Message) => {
       setMessages((prev) =>
@@ -153,6 +147,7 @@ export default function StreamPage() {
     onPlayerUpdate: (data: any) => {
       console.log("[Player Sync] player:update recebido:", data);
       if (playerRef.current && stream && localStorage.getItem("userId") !== stream.host_id) {
+        console.log("[Player Sync] Sincronizando player com data:", data);
         if (data.data.state === "paused") {
           setIsPlaying(false);
         } else if (data.data.state === "playing") {
@@ -185,14 +180,12 @@ export default function StreamPage() {
     },
   });
 
-  // Apenas o host pode iniciar a transmissão
   const handleStartStream = () => {
     if (isHost) {
       startPlayback(0);
     }
   };
 
-  // Carrega os dados da transmissão
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -217,7 +210,6 @@ export default function StreamPage() {
       });
   }, [streamId, router, toast]);
 
-  // Carrega as mensagens do chat
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
@@ -232,7 +224,6 @@ export default function StreamPage() {
       .catch((error) => console.error("Erro ao buscar mensagens:", error));
   }, [streamId]);
 
-  // Atualiza as reações (animação)
   useEffect(() => {
     const interval = setInterval(() => {
       setReactions((prev) => prev.filter((r) => Date.now() - parseInt(r.id) < 2000));
@@ -240,7 +231,6 @@ export default function StreamPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Quando o player estiver pronto, para convidados forçamos a pausa
   const handlePlayerReady = () => {
     console.log("[Player Sync] Player pronto.");
     setPlayerReady(true);
@@ -266,7 +256,6 @@ export default function StreamPage() {
     }
   };
 
-  // O host emite atualizações de tempo; o convidado utiliza estes dados para sincronizar se necessário.
   const handleProgress = (state: { playedSeconds: number }) => {
     if (isHost && socket) {
       const now = Date.now();
@@ -437,7 +426,6 @@ export default function StreamPage() {
             />
           )}
 
-          {/* Overlay que bloqueia interações para convidados */}
           {!isHost && (
             <div className="absolute inset-0 z-30" style={{ background: "rgba(0,0,0,0)", pointerEvents: "all" }}></div>
           )}

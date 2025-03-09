@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { useRouter } from 'next/navigation';
 import { Beef as Bee, Users, Video } from 'lucide-react';
 import { CreateStreamModal } from '@/components/create-stream-modal';
+import { Dialog, DialogContent, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 interface StreamType {
   id: string;
@@ -26,10 +27,14 @@ export default function Dashboard() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [streams, setStreams] = useState<StreamType[]>([]);
   const [viewers, setViewers] = useState(1);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
+
+    if (!token) {
+      setShowLoginModal(true); 
+    } else {
       fetch('https://backend-streamhive.onrender.com/api/streams', {
         headers: {
           'Content-Type': 'application/json',
@@ -128,66 +133,18 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           </div>
-
-          <Tabs defaultValue="recent">
-            <TabsList className="mb-6">
-              <TabsTrigger value="recent">Recentes</TabsTrigger>
-              <TabsTrigger value="favorites">Favoritos</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="recent">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {streams.length > 0 ? (
-                  streams.map((stream) => (
-                    <motion.div
-                      key={stream.id}
-                      whileHover={{ y: -5 }}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.3 }}
-                    >
-                      <Card className="border border-border h-full flex flex-col">
-                        <CardHeader>
-                          <CardTitle>{stream.title}</CardTitle>
-                          <CardDescription className="flex items-center">
-                            {stream.host}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <p className="text-sm text-muted-foreground">
-                            {stream.viewers} participantes
-                          </p>
-                        </CardContent>
-                        <CardFooter className="mt-auto">
-                          <Button
-                            variant="outline"
-                            className="w-full"
-                            onClick={() => handleJoinStream(stream.id)}
-                          >
-                            Continuar Assistindo
-                          </Button>
-                        </CardFooter>
-                      </Card>
-                    </motion.div>
-                  ))
-                ) : (
-                  <p className="col-span-full text-center text-muted-foreground">
-                    Nenhuma transmissão disponível.
-                  </p>
-                )}
-              </div>
-            </TabsContent>
-
-            <TabsContent value="favorites">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <p className="col-span-full text-center text-muted-foreground">
-                  Nenhum favorito por enquanto.
-                </p>
-              </div>
-            </TabsContent>
-          </Tabs>
         </motion.div>
       </main>
+
+      <Dialog open={showLoginModal} onOpenChange={setShowLoginModal}>
+        <DialogContent>
+          <DialogTitle>Atenção</DialogTitle>
+          <p>Você não está logado. Faça login para continuar.</p>
+          <DialogFooter>
+            <Button onClick={() => router.push('/')}>Fazer Login</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <CreateStreamModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
     </div>
