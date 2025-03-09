@@ -44,7 +44,17 @@ export function useRoomSocket(
     socket.on("connect", () => {
       console.log("[Socket] Conectado:", socket.id);
       socket.emit("join-room", roomId);
+      if (!isHost) {
+      console.log("[Socket] Solicitando sincronização para o novo participante");
+      socket.emit("request:sync", { roomId });
+    }
     });
+
+    socket.on("player:sync", (data: PlayerStartData) => {
+      console.log("[Socket] Evento player:sync recebido:", data);
+      callbacks.onPlayerStart(data);
+    });
+      
 
     socket.on("player:start", (data: PlayerStartData) => {
       console.log("[Socket] Evento player:start recebido:", data);

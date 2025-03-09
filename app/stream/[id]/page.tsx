@@ -455,6 +455,38 @@ export default function StreamPage() {
               config={{ youtube: { playerVars: { showinfo: 1 } } }}
               onReady={handlePlayerReady}
               onProgress={handleProgress}
+              onPause={() => {
+                if (isHost && socket) {
+                  const currentTime = playerRef.current?.getCurrentTime() || 0;
+                  console.log("[StreamPage] Host pausou, emitindo player:update com estado paused");
+                  socket.emit("player:update", {
+                    roomId: streamId,
+                    data: {
+                      time: currentTime,
+                      state: "paused",
+                      volume,
+                      muted: isMuted,
+                    },
+                  });
+                  setIsPlaying(false);
+                }
+              }}
+              onPlay={() => {
+                if (isHost && socket) {
+                  const currentTime = playerRef.current?.getCurrentTime() || 0;
+                  console.log("[StreamPage] Host retomou, emitindo player:update com estado playing");
+                  socket.emit("player:update", {
+                    roomId: streamId,
+                    data: {
+                      time: currentTime,
+                      state: "playing",
+                      volume,
+                      muted: isMuted,
+                    },
+                  });
+                  setIsPlaying(true);
+                }
+              }}
               onError={handlePlayerError}
             />
           ) : videoIsHLS ? (
@@ -477,6 +509,38 @@ export default function StreamPage() {
               controls
               onReady={handlePlayerReady}
               onProgress={handleProgress}
+              onPause={() => {
+                if (isHost && socket) {
+                  const currentTime = playerRef.current?.getCurrentTime() || 0;
+                  console.log("[StreamPage] Host pausou, emitindo player:update com estado paused");
+                  socket.emit("player:update", {
+                    roomId: streamId,
+                    data: {
+                      time: currentTime,
+                      state: "paused",
+                      volume,
+                      muted: isMuted,
+                    },
+                  });
+                  setIsPlaying(false);
+                }
+              }}
+              onPlay={() => {
+                if (isHost && socket) {
+                  const currentTime = playerRef.current?.getCurrentTime() || 0;
+                  console.log("[StreamPage] Host retomou, emitindo player:update com estado playing");
+                  socket.emit("player:update", {
+                    roomId: streamId,
+                    data: {
+                      time: currentTime,
+                      state: "playing",
+                      volume,
+                      muted: isMuted,
+                    },
+                  });
+                  setIsPlaying(true);
+                }
+              }}
               onError={handlePlayerError}
             />
           )}
