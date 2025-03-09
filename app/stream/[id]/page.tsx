@@ -56,7 +56,7 @@ export default function StreamPage() {
 
   // Estados principais
   const [stream, setStream] = useState<StreamDetails | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false); // Controle de reprodução
+  const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.8);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -77,17 +77,14 @@ export default function StreamPage() {
   const queuedPlayerTimeRef = useRef<number | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
 
-  // Impede que o host saia com o vídeo em reprodução
-  useEffect(() => {
+  // Impede que o host saia com a transmissão ativa
+  const handleHostLeave = () => {
     if (isHost && isPlaying) {
-      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-        e.preventDefault();
-        e.returnValue = "";
-      };
-      window.addEventListener("beforeunload", handleBeforeUnload);
-      return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+      alert("Você precisa encerrar a transmissão antes de sair.");
+    } else {
+      router.push("/dashboard");
     }
-  }, [isHost, isPlaying]);
+  };
 
   // Função para obter a URL do vídeo
   const getVideoUrl = (): string => {
@@ -102,27 +99,25 @@ export default function StreamPage() {
 
   const videoUrl = getVideoUrl();
   const decodedVideoUrl = decodeURIComponent(videoUrl);
-  const isYT = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
-  const videoIsHLS = !isYT && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
+  const isYTSource = stream?.videoUrl.includes("youtube.com") || stream?.videoUrl.includes("youtu.be");
+  const videoIsHLS = !isYTSource && decodedVideoUrl.toLowerCase().endsWith(".m3u8");
 
-  // Callback para o evento de play enviado pelo host.
-  // Para convidados: se o modal de espera estiver ativo, apenas autoriza o play (sem seek);
-  // Se o convidado estiver reentrando (modal já removido), sincroniza (seek) conforme o tempo enviado.
+  // Callback para eventos de play do host.
+  // Se o evento possuir "startAt", trata-se do comando para iniciar a reprodução.
+  // Caso contrário (evento sync) só atualiza o tempo se o convidado já estiver reentrando.
   const handlePlayerStart = (data: { time: number; startAt?: number }) => {
     if (!isHost) {
-      if (showWaitingOverlay) {
+      if (data.startAt !== undefined) {
         console.log("[Player Sync] Autorização recebida para PLAY (convidado)");
         setIsPlaying(true);
         setShowWaitingOverlay(false);
       } else {
-        if (data.time > 0 && playerRef.current) {
+        if (!showWaitingOverlay && playerRef.current) {
           console.log("[Player Sync] Sync (convidado reentrando) para tempo:", data.time);
           playerRef.current.seekTo(data.time, "seconds");
         }
-        setIsPlaying(true);
       }
     } else {
-      // Para o host, usamos delay se startAt estiver definido
       const delay = data.startAt ? data.startAt - Date.now() : 0;
       setTimeout(() => {
         if (playerRef.current) {
@@ -134,7 +129,7 @@ export default function StreamPage() {
     }
   };
 
-  // Integração com o hook de socket.
+  // Integração com o hook de socket
   const { startPlayback, socket } = useRoomSocket(streamId, isHost, {
     onChatMessage: (msg: Message) => {
       setMessages((prev) =>
@@ -164,7 +159,6 @@ export default function StreamPage() {
           setIsPlaying(true);
           setShowWaitingOverlay(false);
         }
-        // Se o convidado já não estiver na tela de espera, e houver diferença de tempo, sincroniza.
         if (!playerReady && data.data.time !== undefined) {
           queuedPlayerTimeRef.current = data.data.time;
           return;
@@ -191,14 +185,14 @@ export default function StreamPage() {
     },
   });
 
-  // O host somente pode iniciar a transmissão
+  // Apenas o host pode iniciar a transmissão
   const handleStartStream = () => {
     if (isHost) {
       startPlayback(0);
     }
   };
 
-  // Carrega os detalhes da transmissão
+  // Carrega os dados da transmissão
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) {
@@ -246,6 +240,7 @@ export default function StreamPage() {
     return () => clearInterval(interval);
   }, []);
 
+  // Quando o player estiver pronto, para convidados forçamos a pausa
   const handlePlayerReady = () => {
     console.log("[Player Sync] Player pronto.");
     setPlayerReady(true);
@@ -271,6 +266,7 @@ export default function StreamPage() {
     }
   };
 
+  // O host emite atualizações de tempo; o convidado utiliza estes dados para sincronizar se necessário.
   const handleProgress = (state: { playedSeconds: number }) => {
     if (isHost && socket) {
       const now = Date.now();
@@ -369,7 +365,7 @@ export default function StreamPage() {
     <div className="min-h-screen flex flex-col">
       <header className="bg-card border-b border-border p-4 flex items-center justify-between">
         <div className="flex items-center">
-          <Button variant="ghost" size="icon" onClick={() => router.push("/dashboard")}>
+          <Button variant="ghost" size="icon" onClick={handleHostLeave}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex items-center ml-2">
@@ -402,7 +398,7 @@ export default function StreamPage() {
               <p className="text-white mb-4">{playerError}</p>
               <Button onClick={handleRetryVideo}>Tentar novamente</Button>
             </div>
-          ) : isYT ? (
+          ) : isYTSource ? (
             <ReactPlayer
               ref={playerRef}
               url={stream?.videoUrl || ""}
@@ -412,9 +408,7 @@ export default function StreamPage() {
               volume={volume}
               muted={isMuted}
               controls
-              config={{
-                youtube: { playerVars: { autoplay: 0, showinfo: 1 } }
-              }}
+              config={{ youtube: { playerVars: { autoplay: 0, showinfo: 1 } } }}
               onReady={handlePlayerReady}
               onProgress={handleProgress}
               onError={handlePlayerError}
@@ -443,7 +437,7 @@ export default function StreamPage() {
             />
           )}
 
-          {/* Overlay para bloquear interações dos convidados */}
+          {/* Overlay que bloqueia interações para convidados */}
           {!isHost && (
             <div className="absolute inset-0 z-30" style={{ background: "rgba(0,0,0,0)", pointerEvents: "all" }}></div>
           )}
