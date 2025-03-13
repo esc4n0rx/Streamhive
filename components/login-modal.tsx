@@ -43,7 +43,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const response = await fetch('http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/auth/login', {
+      const response = await fetch('https://api.streamhivex.icu/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: loginEmail, password: loginPassword })
@@ -68,7 +68,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const response = await fetch('http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/auth/register', {
+      const response = await fetch('https://api.streamhivex.icu/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: registerName, email: registerEmail, password: registerPassword })

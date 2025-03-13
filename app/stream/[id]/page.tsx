@@ -90,7 +90,7 @@ export default function StreamPage() {
     let url = stream.videoUrl;
     const isYT = url.includes("youtube.com") || url.includes("youtu.be");
     if (!isYT && url.startsWith("http://")) {
-      url = `http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/proxy?url=${encodeURIComponent(url)}`;
+      url = `https://api.streamhivex.icu/api/proxy?url=${encodeURIComponent(url)}`;
     }
     return url;
   };
@@ -192,7 +192,7 @@ export default function StreamPage() {
       router.push("/");
       return;
     }
-    fetch(`http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/streams/${streamId}`, {
+    fetch(`https://api.streamhivex.icu/api/streams/${streamId}`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
@@ -213,7 +213,7 @@ export default function StreamPage() {
   useEffect(() => {
     const token = localStorage.getItem("token");
     if (!token) return;
-    fetch(`http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/streams/${streamId}/messages`, {
+    fetch(`https://api.streamhivex.icu/api/streams/${streamId}/messages`, {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
@@ -280,7 +280,7 @@ export default function StreamPage() {
     if (!newMessage.trim()) return;
     const token = localStorage.getItem("token");
     if (!token) return;
-    fetch(`http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/streams/${streamId}/messages`, {
+    fetch(`https://api.streamhivex.icu/api/streams/${streamId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({ text: newMessage, roomId: streamId }),
@@ -317,7 +317,7 @@ export default function StreamPage() {
       if (isHost && socket) {
         socket.emit("stream:ended", { roomId: streamId });
       }
-      const res = await fetch(`http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/streams/${streamId}`, {
+      const res = await fetch(`https://api.streamhivex.icu/api/streams/${streamId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
