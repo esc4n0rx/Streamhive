@@ -41,7 +41,7 @@ export function CreateStreamModal({ isOpen, onClose }: CreateStreamModalProps) {
     try {
       // Se streamSource for objeto, usa sua url; caso contrário, usa o valor diretamente
       const videoUrl = typeof streamSource === 'object' ? streamSource.url : streamSource;
-      const response = await fetch('https://backend-streamhive.onrender.com/api/streams/create', {
+      const response = await fetch('http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/streams/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -251,7 +251,7 @@ export function ContentSuggestionSubModal({ onSelectContent, onClose }: ContentS
     const timer = setTimeout(() => {
       if (searchTerm.trim() !== '') {
         setLoading(true);
-        fetch(`https://backend-streamhive.onrender.com/api/contents?termo=${encodeURIComponent(searchTerm)}`)
+        fetch(`http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/contents?termo=${encodeURIComponent(searchTerm)}`)
           .then(response => response.json())
           .then(data => {
             setSuggestions(data);

@@ -35,7 +35,7 @@ export default function Dashboard() {
     if (!token) {
       setShowLoginModal(true); 
     } else {
-      fetch('https://backend-streamhive.onrender.com/api/streams', {
+      fetch('http://zccw48s0oko0sg4ogows0008.195.35.17.111.sslip.io/api/streams', {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
